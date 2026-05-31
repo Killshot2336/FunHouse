@@ -1,308 +1,781 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="default">
+<html lang="en" data-theme="aden-skyrim">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HouseGrid</title>
+  <title>HouseGrid Final</title>
   <script src="https://cdn.tailwindcss.com"></script>
 
   <style>
     :root {
-      --bg: #080b12;
-      --bg-soft: #111827;
-      --card: rgba(17, 24, 39, 0.82);
-      --card-strong: rgba(31, 41, 55, 0.95);
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --accent: #38bdf8;
-      --accent-2: #818cf8;
-      --border: rgba(148, 163, 184, 0.18);
-      --shadow: 0 24px 80px rgba(0,0,0,0.45);
-      --font-main: Inter, system-ui, sans-serif;
-      --font-display: Inter, system-ui, sans-serif;
-      --radius: 24px;
-    }
-
-    html[data-theme="fallout"] {
-      --bg: #020802;
-      --bg-soft: #061406;
-      --card: rgba(3, 18, 3, 0.9);
-      --card-strong: rgba(5, 28, 5, 0.95);
-      --text: #7cff6b;
-      --muted: #d7b84f;
-      --accent: #44ff33;
-      --accent-2: #ffbf3c;
-      --border: rgba(68, 255, 51, 0.5);
-      --shadow: 0 0 35px rgba(68,255,51,0.16);
-      --font-main: "Courier New", monospace;
-      --font-display: "Courier New", monospace;
-      --radius: 4px;
-    }
-
-    html[data-theme="skyrim"] {
       --bg: #171717;
-      --bg-soft: #2b241e;
-      --card: rgba(224, 205, 164, 0.92);
-      --card-strong: rgba(238, 220, 176, 0.96);
-      --text: #221b14;
+      --bg2: #3a3026;
+      --card: rgba(224, 205, 164, .92);
+      --text: #201710;
       --muted: #5f5140;
-      --accent: #79858d;
-      --accent-2: #b9b2a2;
-      --border: rgba(72, 72, 72, 0.55);
-      --shadow: 0 24px 70px rgba(0,0,0,0.55);
-      --font-main: Georgia, serif;
-      --font-display: Georgia, serif;
-      --radius: 14px;
+      --accent: #79c9ff;
+      --accent2: #d7ecff;
+      --danger: #8b0000;
+      --border: rgba(180, 190, 205, .9);
+      --font: Georgia, "Times New Roman", serif;
+      --radius: 16px;
+      --shadow: 0 0 35px rgba(121, 201, 255, .25);
     }
 
-    html[data-theme="karlach"] {
-      --bg: #070308;
-      --bg-soft: #21070c;
-      --card: rgba(33, 7, 12, 0.9);
-      --card-strong: rgba(57, 13, 20, 0.97);
+    html[data-theme="aden-skyrim"] {
+      --bg: #171717;
+      --bg2: #3a3026;
+      --card: rgba(224, 205, 164, .92);
+      --text: #201710;
+      --muted: #5f5140;
+      --accent: #79c9ff;
+      --accent2: #d7ecff;
+      --danger: #8b0000;
+      --border: rgba(180, 190, 205, .9);
+      --font: Georgia, "Times New Roman", serif;
+      --radius: 16px;
+      --shadow: 0 0 35px rgba(121, 201, 255, .25);
+    }
+
+    html[data-theme="edward-fo76"] {
+      --bg: #020202;
+      --bg2: #101000;
+      --card: rgba(18, 16, 2, .94);
+      --text: #FFCE00;
+      --muted: #d6b84a;
+      --accent: #FFCE00;
+      --accent2: #fff48a;
+      --danger: #ff3b2f;
+      --border: rgba(255,206,0,.85);
+      --font: Arial Black, Impact, system-ui, sans-serif;
+      --radius: 6px;
+      --shadow: 0 0 30px rgba(255,206,0,.22);
+    }
+
+    html[data-theme="jamie-karlach"] {
+      --bg: #070305;
+      --bg2: #2a070b;
+      --card: rgba(32, 6, 8, .92);
       --text: #fff1dc;
       --muted: #d6a66b;
-      --accent: #ff4d1c;
-      --accent-2: #f5b44b;
-      --border: rgba(245, 180, 75, 0.4);
-      --shadow: 0 0 60px rgba(255, 77, 28, 0.18);
-      --font-main: Garamond, Georgia, serif;
-      --font-display: Garamond, Georgia, serif;
+      --accent: #FF4500;
+      --accent2: #ffb347;
+      --danger: #ff1f1f;
+      --border: rgba(255,69,0,.65);
+      --font: Garamond, Georgia, serif;
       --radius: 20px;
+      --shadow: 0 0 42px rgba(255,69,0,.28);
     }
+
+    * { box-sizing: border-box; }
 
     body {
       min-height: 100vh;
+      margin: 0;
+      font-family: var(--font);
       background:
-        radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 25%, transparent), transparent 32%),
-        radial-gradient(circle at bottom right, color-mix(in srgb, var(--accent-2) 20%, transparent), transparent 35%),
-        linear-gradient(135deg, var(--bg), var(--bg-soft));
+        radial-gradient(circle at center, transparent 45%, rgba(0,0,0,.76)),
+        radial-gradient(circle at 30% 10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 35%),
+        linear-gradient(135deg, var(--bg), var(--bg2));
       color: var(--text);
-      font-family: var(--font-main);
-      transition: all 0.35s ease;
+      overflow-x: hidden;
     }
 
-    .app-card {
+    html[data-theme="aden-skyrim"] body {
+      background:
+        radial-gradient(circle at center, rgba(121,201,255,.12), transparent 35%),
+        linear-gradient(135deg, #1d1d1d, #3a3026 45%, #161616);
+    }
+
+    .terminal-fx::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 50;
+      background:
+        repeating-linear-gradient(to bottom, rgba(255,255,255,.055) 0px, rgba(255,255,255,.055) 1px, transparent 2px, transparent 4px),
+        radial-gradient(circle at center, transparent 48%, rgba(0,0,0,.78));
+      animation: phosphorFlicker 1.8s infinite alternate;
+    }
+
+    html[data-theme="jamie-karlach"] .terminal-fx::before { display:none; }
+
+    @keyframes phosphorFlicker { from { opacity:.92; } to { opacity:1; } }
+
+    .hud {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(18px);
-      transition: all 0.35s ease;
+      box-shadow: var(--shadow), inset 0 0 0 1px rgba(255,255,255,.04);
+      backdrop-filter: blur(14px);
     }
 
-    .strong-card {
-      background: var(--card-strong);
+    html[data-theme="aden-skyrim"] .hud {
+      border: 2px solid var(--border);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), 0 0 28px rgba(121,201,255,.18);
     }
 
-    .theme-text-muted { color: var(--muted); }
-    .theme-accent { color: var(--accent); }
-    .theme-bg-accent { background: var(--accent); }
-    .theme-border { border-color: var(--border); }
+    html[data-theme="edward-fo76"] .hud {
+      border: 2px solid var(--border);
+      box-shadow: 0 0 0 2px rgba(0,0,0,.8), 0 0 0 4px rgba(255,206,0,.25), var(--shadow);
+      clip-path: polygon(0 8px, 8px 8px, 8px 0, calc(100% - 8px) 0, calc(100% - 8px) 8px, 100% 8px, 100% calc(100% - 8px), calc(100% - 8px) calc(100% - 8px), calc(100% - 8px) 100%, 8px 100%, 8px calc(100% - 8px), 0 calc(100% - 8px));
+      text-transform: uppercase;
+    }
+
+    .hud-title { text-shadow: 0 0 14px var(--accent); }
+
+    html[data-theme="jamie-karlach"] .lava-title {
+      background: linear-gradient(90deg, #ffdd8a, #ff4500, #ff1010, #ffb347);
+      background-size: 300% auto;
+      background-clip: text;
+      -webkit-background-clip: text;
+      color: transparent;
+      animation: lavaFlow 3s linear infinite;
+    }
+
+    @keyframes lavaFlow { to { background-position: 300% center; } }
 
     .btn {
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #050505;
-      border-radius: calc(var(--radius) - 8px);
-      font-weight: 800;
-      box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 35%, transparent);
+      background: color-mix(in srgb, var(--accent) 18%, black);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 6px);
+      color: var(--text);
+      font-weight: 900;
+      box-shadow: var(--shadow);
+      transition: transform .18s ease, box-shadow .18s ease;
+      cursor: pointer;
     }
 
-    html[data-theme="fallout"] .app-card {
-      image-rendering: pixelated;
-      box-shadow: inset 0 0 0 1px rgba(68,255,51,0.35), 0 0 30px rgba(68,255,51,0.13);
-      text-shadow: 0 0 7px rgba(68,255,51,0.45);
-    }
+    .btn:hover { transform: translateY(-1px); box-shadow: 0 0 36px color-mix(in srgb, var(--accent) 45%, transparent); }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
 
-    html[data-theme="skyrim"] body {
-      background:
-        linear-gradient(135deg, rgba(25,25,25,0.96), rgba(52,39,27,0.96)),
-        repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 2px, transparent 2px 8px);
-    }
+    html[data-theme="jamie-karlach"] .btn { animation: enginePulse 1.8s infinite alternate; }
+    @keyframes enginePulse { from { box-shadow: 0 0 18px rgba(255,69,0,.22); } to { box-shadow: 0 0 46px rgba(255,69,0,.58); } }
 
-    html[data-theme="karlach"] .app-card {
-      box-shadow: inset 0 0 0 1px rgba(245,180,75,0.18), 0 0 50px rgba(255,77,28,0.15);
+    .glitch-jitter:hover { animation: glitchJitter .14s infinite; }
+    @keyframes glitchJitter { 0% { transform: translate(0,0); } 25% { transform: translate(1px,-1px); } 50% { transform: translate(-2px,1px); } 75% { transform: translate(2px,2px); } 100% { transform: translate(-1px,0); } }
+
+    .typewriter { display:inline-block; overflow:hidden; white-space:nowrap; animation: typing .9s steps(12,end); }
+    @keyframes typing { from { max-width:0; } to { max-width:100%; } }
+
+    .critical { color:var(--danger); animation:violentFlicker .08s infinite; text-shadow:0 0 16px var(--danger); }
+    @keyframes violentFlicker { 0% { opacity:1; transform:translate(0,0); } 50% { opacity:.45; transform:translate(1px,-1px); } 100% { opacity:1; transform:translate(-1px,1px); } }
+
+    html[data-theme="jamie-karlach"].engine-critical body { animation: scorchedPulse .8s infinite alternate; }
+    @keyframes scorchedPulse { from { box-shadow: inset 0 0 80px rgba(255,69,0,.12); } to { box-shadow: inset 0 0 180px rgba(255,0,0,.45); } }
+
+    .known-tag { background: rgba(255,206,0,.22); color:#FFCE00; border:1px solid rgba(255,206,0,.75); padding:2px 8px; font-size:11px; font-weight:900; }
+
+    .scrap-out { animation:scrapOut .55s forwards; mask-image:linear-gradient(90deg,#000 40%,transparent 70%); -webkit-mask-image:linear-gradient(90deg,#000 40%,transparent 70%); }
+    @keyframes scrapOut { to { opacity:0; transform:scale(.94) translateX(18px); filter:blur(3px); } }
+
+    .dragon-soul { animation:dragonSoul 900ms ease-out; }
+    @keyframes dragonSoul { 0% { box-shadow:0 0 0 rgba(121,201,255,0); transform:scale(1); } 40% { box-shadow:0 0 80px rgba(121,201,255,.9); transform:scale(1.03); filter:brightness(1.4); } 100% { box-shadow:var(--shadow); transform:scale(1); } }
+
+    .victory-glow { animation:victoryGlow 1.2s infinite alternate; }
+    @keyframes victoryGlow { from { box-shadow:0 0 25px color-mix(in srgb,var(--accent) 30%,transparent); } to { box-shadow:0 0 80px color-mix(in srgb,var(--accent) 80%,transparent); } }
+
+    @keyframes dieRoll { 0%{transform:rotate(0deg) scale(1)} 25%{transform:rotate(90deg) scale(1.2)} 50%{transform:rotate(180deg) scale(.9)} 75%{transform:rotate(360deg) scale(1.25)} 100%{transform:rotate(720deg) scale(1)} }
+    .die-roll { animation:dieRoll .8s ease-in-out; }
+
+    .safe { color:#86efac; background:rgba(34,197,94,.14); text-shadow:0 0 18px rgba(34,197,94,.75); box-shadow:0 0 45px rgba(34,197,94,.28); }
+    .bad { color:#fca5a5; background:rgba(239,68,68,.16); text-shadow:0 0 18px rgba(239,68,68,.85); box-shadow:0 0 45px rgba(239,68,68,.38); }
+
+    input, select, textarea {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: calc(var(--radius) - 6px);
+      outline: none;
     }
   </style>
 </head>
 
-<body>
-  <main class="w-full max-w-6xl mx-auto px-4 py-5 sm:px-6 lg:px-8">
+<body class="terminal-fx">
+  <div id="loginScreen" class="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black">
+    <div class="hud p-6 max-w-md w-full text-center">
+      <h1 class="text-4xl font-black hud-title">HOUSEGRID LOCKED</h1>
+      <p class="mt-3 opacity-80 font-black">Identify yourself or get blasted.</p>
+      <select id="loginPerson" class="w-full mt-5 p-3 font-black"><option>Aden</option><option>Edward</option><option>Jamie</option></select>
+      <input id="loginPassword" class="w-full mt-3 p-3" type="password" placeholder="House password" />
+      <button id="loginBtn" class="btn w-full py-3 mt-4">Enter HouseGrid</button>
+      <p id="loginError" class="hidden mt-3 text-red-400 font-black">Wrong password. Try again.</p>
+    </div>
+  </div>
 
-    <header class="app-card p-5 mb-5">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+  <main class="max-w-7xl mx-auto p-4 sm:p-6">
+    <nav class="hud p-4 mb-5">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <p class="text-sm theme-text-muted font-bold tracking-[0.25em] uppercase">Private Family System</p>
-          <h1 class="text-4xl sm:text-5xl font-black tracking-tight" style="font-family: var(--font-display);">
-            HouseGrid
-          </h1>
-          <p class="theme-text-muted mt-2 max-w-xl">
-            Schedules, bills, groceries, house money, and stress levels in one private place.
-          </p>
+          <p id="themeLabel" class="text-xs font-black tracking-[.3em] opacity-70">HOUSEGRID COMMAND</p>
+          <h1 class="text-5xl sm:text-7xl font-black hud-title lava-title">HOUSEGRID</h1>
         </div>
-
-        <div class="flex flex-col gap-2">
-          <label for="themeSelect" class="text-sm theme-text-muted font-bold">Theme</label>
-          <select id="themeSelect"
-            class="app-card strong-card px-4 py-3 outline-none text-sm font-bold cursor-pointer">
-            <option value="default">Default</option>
-            <option value="fallout">Fallout 4 — Aden</option>
-            <option value="skyrim">Skyrim — Edward</option>
-            <option value="karlach">Baldur's Gate Karlach — Jamie</option>
-          </select>
-        </div>
+        <select id="themeSelect" class="p-3 font-black">
+          <option value="aden-skyrim">Aden — Skyrim Dragonborn</option>
+          <option value="edward-fo76">Edward — Fallout 76 C.A.M.P.</option>
+          <option value="jamie-karlach">Jamie — Karlach Infernal Engine</option>
+        </select>
       </div>
-    </header>
+    </nav>
 
-    <section class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
-      <div class="app-card p-5">
-        <p class="theme-text-muted text-sm font-bold">House Fund</p>
-        <h2 class="text-3xl font-black mt-2">$145</h2>
-        <p class="theme-text-muted mt-1">helped this month</p>
-      </div>
-
-      <div class="app-card p-5">
-        <p class="theme-text-muted text-sm font-bold">Next Bill</p>
-        <h2 class="text-3xl font-black mt-2">Electric</h2>
-        <p class="theme-text-muted mt-1">$80 due Friday</p>
-      </div>
-
-      <div class="app-card p-5">
-        <p class="theme-text-muted text-sm font-bold">House Stress</p>
-        <h2 class="text-3xl font-black mt-2 theme-accent">Okay</h2>
-        <p class="theme-text-muted mt-1">keep spending controlled</p>
-      </div>
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5">
+      <div class="hud p-5 glitch-jitter"><p id="cashLabel" class="opacity-70 font-black">GUILD TREASURY</p><h2 id="cashStat" class="text-5xl font-black typewriter">$0</h2></div>
+      <div class="hud p-5 glitch-jitter"><p id="foodLabel" class="opacity-70 font-black">QUEST SUPPLIES</p><h2 id="foodStat" class="text-5xl font-black typewriter">0</h2></div>
+      <div class="hud p-5 glitch-jitter"><p id="billLabel" class="opacity-70 font-black">DEBTS</p><h2 id="billStat" class="text-5xl font-black typewriter">0</h2></div>
+      <div class="hud p-5 glitch-jitter"><p id="stressLabel" class="opacity-70 font-black">STAMINA</p><h2 id="stressStat" class="text-3xl font-black typewriter">OKAY</h2></div>
     </section>
 
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <div class="app-card p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xl font-black">Today’s Shifts</h3>
-          <button class="btn px-4 py-2 text-sm">Add</button>
-        </div>
-
-        <div class="space-y-3">
-          <div class="strong-card app-card p-4 flex justify-between items-center">
-            <div>
-              <p class="font-black">Aden</p>
-              <p class="theme-text-muted text-sm">Sonic · 4 PM – 11 PM</p>
-            </div>
-            <span class="theme-accent font-black">7 hrs</span>
-          </div>
-
-          <div class="strong-card app-card p-4 flex justify-between items-center">
-            <div>
-              <p class="font-black">Edward</p>
-              <p class="theme-text-muted text-sm">Sonic · 10 AM – 6 PM</p>
-            </div>
-            <span class="theme-accent font-black">8 hrs</span>
-          </div>
-        </div>
+      <div class="hud p-5">
+        <div class="flex items-center justify-between gap-3 mb-4"><h2 id="groceryTitle" class="text-3xl font-black hud-title lava-title">Quest Supplies</h2><span id="groceryCount" class="hud px-3 py-1 font-black">0 ACTIVE</span></div>
+        <form id="groceryForm" class="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-4"><input id="itemName" class="p-3 sm:col-span-2" placeholder="Item" required /><input id="itemPrice" class="p-3" type="number" placeholder="$" required /><select id="itemPriority" class="p-3"><option>High</option><option selected>Medium</option><option>Low</option></select><button class="btn p-3">ADD</button></form>
+        <div id="groceryAlert" class="hud p-4 mb-4 hidden font-black text-red-400">⚠️ WARNING: Critical resource shortage. Restock this shit immediately.</div>
+        <div id="groceryList" class="space-y-3"></div>
       </div>
 
-      <div class="app-card p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-xl font-black">Grocery List</h3>
-          <button class="btn px-4 py-2 text-sm">Add</button>
-        </div>
-
-        <div class="space-y-3">
-          <label class="strong-card app-card p-4 flex items-center gap-3">
-            <input type="checkbox" class="w-5 h-5 accent-current">
-            <span class="font-bold">Milk</span>
-            <span class="ml-auto theme-text-muted">$4</span>
-          </label>
-
-          <label class="strong-card app-card p-4 flex items-center gap-3">
-            <input type="checkbox" class="w-5 h-5 accent-current">
-            <span class="font-bold">Bread</span>
-            <span class="ml-auto theme-text-muted">$3</span>
-          </label>
-
-          <label class="strong-card app-card p-4 flex items-center gap-3">
-            <input type="checkbox" class="w-5 h-5 accent-current">
-            <span class="font-bold">Dog food</span>
-            <span class="ml-auto theme-accent font-black">Urgent</span>
-          </label>
-        </div>
+      <div class="hud p-5">
+        <h2 id="stressTitle" class="text-3xl font-black hud-title lava-title">Stress Meter</h2>
+        <div class="mt-5 h-8 hud"><div id="stressBar" class="h-full bg-red-500" style="width:50%; box-shadow:0 0 22px var(--danger);"></div></div>
+        <div class="grid grid-cols-2 gap-3 mt-5"><button onclick="setStress(1)" class="btn p-4">GOOD</button><button onclick="setStress(2)" class="btn p-4">OKAY</button><button onclick="setStress(3)" class="btn p-4">BAD</button><button onclick="setStress(4)" class="btn p-4">MAXED</button></div>
+        <p id="stressWarning" class="mt-5 text-xl font-black">House pressure is stable.</p>
       </div>
+    </section>
 
-      <div class="app-card p-5">
-        <h3 class="text-xl font-black mb-4">Bills</h3>
+    <section class="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
+      <div class="hud p-5 xl:col-span-2"><div class="flex items-center justify-between mb-5"><h2 id="billsTitle" class="text-3xl font-black hud-title lava-title">Bills</h2><span id="unpaidBillsBadge" class="hud px-3 py-1 font-black">0 UNPAID</span></div><div id="billsList" class="space-y-3"></div></div>
 
-        <div class="space-y-3">
-          <div class="strong-card app-card p-4">
-            <div class="flex justify-between">
-              <p class="font-black">Electric</p>
-              <p class="theme-accent font-black">$80</p>
-            </div>
-            <p class="theme-text-muted text-sm mt-1">Due Friday · Unpaid</p>
-          </div>
+      <div class="hud p-5"><h2 id="fundTitle" class="text-3xl font-black hud-title lava-title">House Fund</h2><div class="hud p-5 mt-4 text-center"><div id="fundIcon" class="text-6xl mb-2">🪙</div><p class="opacity-70 font-black">Total Contributions</p><h3 id="fundTotal" class="text-5xl font-black mt-2">$0</h3></div><form id="fundForm" class="space-y-3 mt-4"><select id="fundPerson" class="w-full p-3"><option>Aden</option><option>Edward</option><option>Jamie</option></select><input id="fundAmount" class="p-3 w-full" type="number" placeholder="Amount" required /><input id="fundReason" class="p-3 w-full" placeholder="For what?" required /><button class="btn py-3 w-full">Add Contribution</button></form><div id="edwardFundWarning" class="hud p-4 mt-4 hidden font-black text-red-400"></div><div id="fundFeed" class="space-y-3 mt-4"></div></div>
 
-          <div class="strong-card app-card p-4">
-            <div class="flex justify-between">
-              <p class="font-black">Internet</p>
-              <p class="theme-accent font-black">$55</p>
-            </div>
-            <p class="theme-text-muted text-sm mt-1">Due next week · Paid</p>
-          </div>
-        </div>
-      </div>
+      <div class="hud p-5 xl:col-span-3"><div class="flex items-center justify-between mb-5"><h2 id="workTitle" class="text-3xl font-black hud-title lava-title">Work Schedule</h2><span id="workingBadge" class="hud px-3 py-1 font-black">Nobody active</span></div><form id="shiftForm" class="grid grid-cols-1 sm:grid-cols-6 gap-3 mb-5"><select id="shiftPerson" class="p-3"><option>Aden</option><option>Edward</option><option>Jamie</option></select><input id="shiftJob" class="p-3" value="Sonic" required /><select id="shiftDay" class="p-3"><option>Sunday</option><option>Monday</option><option>Tuesday</option><option>Wednesday</option><option>Thursday</option><option>Friday</option><option>Saturday</option></select><input id="shiftStart" class="p-3" type="time" required /><input id="shiftEnd" class="p-3" type="time" required /><button class="btn py-3">Add Shift</button></form><div id="shiftList" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div></div>
+    </section>
 
-      <div class="app-card p-5">
-        <h3 class="text-xl font-black mb-4">Can We Afford This?</h3>
+    <section class="hud p-5 mt-4">
+      <div class="flex items-center justify-between mb-5"><h2 id="affordTitle" class="text-3xl font-black hud-title lava-title">Can We Afford This?</h2><span id="affordBudgetBadge" class="hud px-3 py-1 font-black">Budget scanning...</span></div>
+      <div class="grid grid-cols-1 lg:grid-cols-5 gap-3"><input id="affordInput" class="p-4 lg:col-span-4 text-lg font-black" placeholder="Can we spend $30 on dinner?" oninput="runAffordTool()" /><button onclick="runAffordTool()" class="btn py-4">Analyze</button></div>
+      <div id="affordResultBox" class="hud p-5 mt-5 hidden"><div id="karlachDie" class="hidden text-center text-7xl font-black mb-4">🎲</div><div id="affordVerdict" class="text-center text-5xl sm:text-7xl font-black tracking-widest border-2 p-6">SAFE</div><p id="affordExplanation" class="text-center opacity-80 text-lg font-black mt-4"></p></div>
+    </section>
 
-        <div class="strong-card app-card p-4">
-          <input id="spendInput" type="number" placeholder="Enter amount, like 25"
-            class="w-full bg-transparent outline-none text-lg font-bold placeholder:opacity-50">
-        </div>
-
-        <button onclick="checkSpend()" class="btn w-full py-3 mt-3">Check</button>
-
-        <div id="spendResult" class="strong-card app-card p-4 mt-3 hidden">
-          <p class="font-black text-lg" id="resultTitle"></p>
-          <p class="theme-text-muted mt-1" id="resultText"></p>
-        </div>
-      </div>
+    <section class="hud p-5 mt-4" id="questBoard">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5"><div><p class="text-xs font-black uppercase tracking-[.3em] opacity-70">Daily Quest Board</p><h2 class="text-3xl sm:text-4xl font-black hud-title lava-title">Chore War Table</h2></div><span id="weeklyCountdown" class="hud px-3 py-1 font-black">Weekly reset loading...</span></div>
+      <div id="victoryBanner" class="hud p-5 mb-5 hidden text-2xl font-black text-center"></div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-5"><div class="hud p-5"><h3 class="text-2xl font-black">Aden</h3><p class="opacity-70">Dragonborn XP</p><h4 id="xp-Aden" class="text-5xl font-black mt-2">0</h4><p id="adenInsult" class="hidden mt-3 text-red-400 font-black">Aden is a worthless milk-drinker right now.</p></div><div class="hud p-5"><h3 class="text-2xl font-black">Edward</h3><p class="opacity-70">C.A.M.P. XP</p><h4 id="xp-Edward" class="text-5xl font-black mt-2">0</h4></div><div class="hud p-5"><h3 class="text-2xl font-black">Jamie</h3><p class="opacity-70">Infernal XP</p><h4 id="xp-Jamie" class="text-5xl font-black mt-2">0</h4></div></div>
+      <select id="questPerson" class="w-full sm:w-auto p-3 font-black mb-5"><option>Aden</option><option>Edward</option><option>Jamie</option></select>
+      <div id="dailyQuestList" class="grid grid-cols-1 lg:grid-cols-2 gap-3"></div>
     </section>
   </main>
 
-  <script>
-    const themeSelect = document.getElementById("themeSelect");
-    const savedTheme = localStorage.getItem("housegrid-theme") || "default";
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+    import { getDatabase, ref, set, update, push, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js";
 
-    document.documentElement.setAttribute("data-theme", savedTheme);
-    themeSelect.value = savedTheme;
+    const firebaseConfig = {
+      apiKey: "PASTE_HERE",
+      authDomain: "PASTE_HERE",
+      databaseURL: "PASTE_HERE",
+      projectId: "PASTE_HERE",
+      storageBucket: "PASTE_HERE",
+      messagingSenderId: "PASTE_HERE",
+      appId: "PASTE_HERE"
+    };
 
-    themeSelect.addEventListener("change", function () {
-      document.documentElement.setAttribute("data-theme", this.value);
-      localStorage.setItem("housegrid-theme", this.value);
+    const HOUSE_PASSWORD = "change-this-password";
+    const HOUSE_ID = "edward-jamie-aden-house";
+    const BASE = `houses/${HOUSE_ID}`;
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    let currentUser = localStorage.getItem("housegrid-user") || "Aden";
+    let currentTheme = localStorage.getItem("housegrid-theme") || "aden-skyrim";
+
+    let groceryState = [];
+    let billsState = [];
+    let fundState = [];
+    let shiftState = [];
+    let stressState = { Aden: 2, Edward: 2, Jamie: 2 };
+    let xpState = { totals: { Aden: 0, Edward: 0, Jamie: 0 }, completions: {}, lastWinner: null };
+
+    const defaultData = {
+      groceries: {
+        g1: { name: "Milk", price: 4, priority: "High", person: "Jamie", bought: false, createdAt: Date.now() },
+        g2: { name: "Bread", price: 3, priority: "Low", person: "Edward", bought: false, createdAt: Date.now() },
+        g3: { name: "Dog Food", price: 18, priority: "High", person: "Aden", bought: false, createdAt: Date.now() }
+      },
+      bills: {
+        b1: { name: "Rent", amount: 750, dueIn: 9, paid: false, payer: "Edward" },
+        b2: { name: "Electric", amount: 118, dueIn: 2, paid: false, payer: "Jamie" },
+        b3: { name: "Water", amount: 46, dueIn: 5, paid: false, payer: "Edward" },
+        b4: { name: "Internet", amount: 65, dueIn: 12, paid: true, payer: "Jamie" },
+        b5: { name: "Car Insurance", amount: 140, dueIn: 3, paid: false, payer: "Aden" },
+        b6: { name: "Phone", amount: 95, dueIn: 15, paid: true, payer: "Edward" }
+      },
+      fund: {
+        f1: { person: "Edward", amount: 25, reason: "gas", createdAt: Date.now() },
+        f2: { person: "Jamie", amount: 80, reason: "Soul Coin", createdAt: Date.now() },
+        f3: { person: "Aden", amount: 40, reason: "groceries", createdAt: Date.now() }
+      },
+      shifts: {
+        s1: { person: "Aden", job: "Sonic", day: "Monday", start: "16:00", end: "23:00", createdAt: Date.now() },
+        s2: { person: "Edward", job: "Sonic", day: "Monday", start: "10:00", end: "18:00", createdAt: Date.now() },
+        s3: { person: "Jamie", job: "Sonic", day: "Tuesday", start: "12:00", end: "20:00", createdAt: Date.now() }
+      },
+      stress: { Aden: 2, Edward: 2, Jamie: 2 },
+      meta: { seeded: true }
+    };
+
+    const themeCopy = {
+      "aden-skyrim": {
+        label: "DRAGONBORN HOUSEGRID",
+        cash: "GUILD TREASURY",
+        food: "QUEST SUPPLIES",
+        bills: "DEBTS OF THE HOLD",
+        stress: "STAMINA",
+        grocery: "Quest Supplies",
+        billTitle: "Debts of the Hold",
+        fundTitle: "Guild Treasury",
+        fundIcon: "🪙",
+        workTitle: "Active Bounties",
+        activeWork: "On a Daily Pledge",
+        inactiveWork: "Resting at the Hall",
+        affordTitle: "Divined by the 8",
+        affordSafe: "DIVINE BLESSING",
+        affordBad: "HERETIC'S FOLLY",
+        criticalStress: "Lethal Dragon Fatigue — GTFO"
+      },
+      "edward-fo76": {
+        label: "C.A.M.P. BUILD MENU",
+        cash: "CAP STASH",
+        food: "KNOWN SUPPLIES",
+        bills: "TAX COLLECTOR BOTS",
+        stress: "HUNGER/THIRST",
+        grocery: "C.A.M.P. Supplies",
+        billTitle: "Tax Collector Bots",
+        fundTitle: "Cap Stash",
+        fundIcon: "🧢",
+        workTitle: "Event Rotations",
+        activeWork: "Running the Event",
+        inactiveWork: "Back at C.A.M.P.",
+        affordTitle: "C.A.M.P. Budget Check",
+        affordSafe: "APPROVED",
+        affordBad: "NO CAPS",
+        criticalStress: "Hunger/Thirst Maxed — Quit scavenging and handle it."
+      },
+      "jamie-karlach": {
+        label: "INFERNAL ENGINE COMMAND",
+        cash: "WAR CHEST",
+        food: "CAMP SUPPLIES",
+        bills: "DEVIL'S CONTRACTS",
+        stress: "ENGINE HEAT",
+        grocery: "Camp Supplies",
+        billTitle: "Devil's Contracts",
+        fundTitle: "Infernal War Chest",
+        fundIcon: "🔥",
+        workTitle: "Blood War Rotations",
+        activeWork: "Deployed in the Blood War",
+        inactiveWork: "Back at Camp",
+        affordTitle: "Roll for Initiative",
+        affordSafe: "NAT 20 — BUY IT",
+        affordBad: "CRIT FAIL",
+        criticalStress: "Screaming Rage"
+      }
+    };
+
+    const choreTasks = [
+      { id: "dishes", xp: 5, names: { Aden: "Scrubbing the Feast Hall", Edward: "Cleaning the C.A.M.P. Kitchen", Jamie: "Scouring the Camp Mess" } },
+      { id: "catBoxes", xp: 10, names: { Aden: "Clearing the Skeever Den", Edward: "Handling Scorched Waste", Jamie: "Tending the Infernal Owlbear Nest" } },
+      { id: "trash", xp: 5, names: { Aden: "Dumping the Skooma Scum", Edward: "Scrapping Appalachian Junk", Jamie: "Hauling the Blood War Dead" } },
+      { id: "bathroom", xp: 15, names: { Aden: "Restoring the Temple of Dibella", Edward: "Decontaminating the Latrine", Jamie: "Cleaning the Avernus Bathhouse" } },
+      { id: "bed", xp: 2, names: { Aden: "Preparing the Bedroll", Edward: "Tucking in the Vault-Tec Bunk", Jamie: "Resetting the Bedding" } },
+      { id: "gamingStation", xp: 10, names: { Aden: "Organizing the Elder Scrolls", Edward: "Calibrating the Holotape Deck", Jamie: "Polishing the Soul Coin Terminal" } },
+      { id: "cups", xp: 2, names: { Aden: "Banishing the Empty Tankards", Edward: "Collecting Empty Nuka-Cola Bottles", Jamie: "Clearing the Goblets" } }
+    ];
+
+    function snapToArray(snapshot) {
+      if (!snapshot.exists()) return [];
+      return Object.entries(snapshot.val()).map(([id, data]) => ({ id, ...data }));
+    }
+
+    function applyTheme(theme) {
+      currentTheme = theme;
+      localStorage.setItem("housegrid-theme", theme);
+      document.documentElement.setAttribute("data-theme", theme);
+      const c = themeCopy[theme];
+      document.getElementById("themeSelect").value = theme;
+      document.getElementById("themeLabel").textContent = c.label;
+      document.getElementById("cashLabel").textContent = c.cash;
+      document.getElementById("foodLabel").textContent = c.food;
+      document.getElementById("billLabel").textContent = c.bills;
+      document.getElementById("stressLabel").textContent = c.stress;
+      document.getElementById("stressTitle").textContent = c.stress;
+      document.getElementById("groceryTitle").textContent = c.grocery;
+      document.getElementById("billsTitle").textContent = c.billTitle;
+      document.getElementById("fundTitle").textContent = c.fundTitle;
+      document.getElementById("fundIcon").textContent = c.fundIcon;
+      document.getElementById("workTitle").textContent = c.workTitle;
+      document.getElementById("affordTitle").textContent = c.affordTitle;
+      renderAll();
+    }
+
+    function restartTypewriter() {
+      document.querySelectorAll(".typewriter").forEach(el => {
+        el.classList.remove("typewriter");
+        void el.offsetWidth;
+        el.classList.add("typewriter");
+      });
+    }
+
+    function renderAll() {
+      renderDashboard();
+      renderGroceries();
+      renderBills();
+      renderFund();
+      renderShifts();
+      renderStress();
+      renderQuestBoard();
+      runAffordTool();
+      restartTypewriter();
+    }
+
+    function renderDashboard() {
+      const totalFund = fundState.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const activeGroceries = groceryState.filter(g => !g.bought).length;
+      const unpaidBills = billsState.filter(b => !b.paid).length;
+      document.getElementById("cashStat").textContent = `$${totalFund}`;
+      document.getElementById("foodStat").textContent = activeGroceries;
+      document.getElementById("billStat").textContent = unpaidBills;
+    }
+
+    function priorityLabel(priority) {
+      if (currentTheme === "aden-skyrim" && priority === "High") return "DRAGON-LEVEL NEED";
+      if (currentTheme === "edward-fo76" && priority === "High") return "C.A.M.P. CRITICAL";
+      if (currentTheme === "jamie-karlach" && priority === "High") return "HELLFIRE NEED";
+      return String(priority).toUpperCase();
+    }
+
+    function renderGroceries() {
+      const list = document.getElementById("groceryList");
+      const active = groceryState.filter(g => !g.bought);
+      document.getElementById("groceryCount").textContent = `${active.length} ACTIVE`;
+      list.innerHTML = "";
+      groceryState.forEach(item => {
+        const row = document.createElement("div");
+        row.id = `grocery-${item.id}`;
+        row.className = "hud p-4 flex items-center justify-between gap-3";
+        row.innerHTML = `
+          <div>
+            <p class="text-xl font-black ${item.bought ? "line-through opacity-60" : ""}">
+              ${item.name}
+              ${currentTheme === "edward-fo76" && item.bought ? `<span class="known-tag ml-2">(KNOWN)</span>` : ""}
+            </p>
+            <p class="opacity-70 text-sm">Added by ${item.person || "House"} · $${item.price || 0} · ${priorityLabel(item.priority)}</p>
+          </div>
+          <button onclick="toggleGrocery('${item.id}')" class="btn px-4 py-2">${item.bought ? "KNOWN" : "DONE"}</button>
+        `;
+        list.appendChild(row);
+      });
+      renderDashboard();
+    }
+
+    function renderBills() {
+      const list = document.getElementById("billsList");
+      const unpaid = billsState.filter(b => !b.paid);
+      document.getElementById("unpaidBillsBadge").textContent = `${unpaid.length} UNPAID`;
+      list.innerHTML = "";
+      billsState.forEach(bill => {
+        const urgent = !bill.paid && Number(bill.dueIn) <= 3;
+        const status = bill.paid ? "PAID" : currentTheme === "edward-fo76" ? "CAPS MISSING" : currentTheme === "jamie-karlach" ? "BURNING DEBT" : "UNPAID";
+        const row = document.createElement("div");
+        row.className = `hud p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 ${urgent ? "critical" : ""}`;
+        row.innerHTML = `
+          <div><p class="text-xl font-black">${bill.name}</p><p class="opacity-70 text-sm">Usually handled by ${bill.payer}</p></div>
+          <div class="flex flex-wrap items-center gap-2"><span class="hud px-3 py-1 font-black">$${bill.amount}</span><span class="hud px-3 py-1 font-black">${bill.dueIn} DAYS</span><button onclick="toggleBillStatus('${bill.id}')" class="btn px-4 py-2">${status}</button></div>
+        `;
+        list.appendChild(row);
+      });
+      renderDashboard();
+    }
+
+    function renderFund() {
+      const feed = document.getElementById("fundFeed");
+      const total = fundState.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      document.getElementById("fundTotal").textContent = `$${total}`;
+      const edwardPaid = fundState.some(item => item.person === "Edward" && Number(item.amount) > 0);
+      const warning = document.getElementById("edwardFundWarning");
+      if (currentTheme === "edward-fo76" && !edwardPaid) {
+        warning.textContent = "Vendor out of Caps. Stop being a goddamn scavenger and deposit some loot.";
+        warning.classList.remove("hidden");
+      } else warning.classList.add("hidden");
+      feed.innerHTML = "";
+      fundState.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "hud p-3 flex justify-between items-center gap-3";
+        row.innerHTML = `<div><p class="font-black">${item.person} added $${item.amount}</p><p class="opacity-70 text-sm">For ${item.reason}</p></div><span class="hud px-3 py-1 font-black">$${item.amount}</span>`;
+        feed.appendChild(row);
+      });
+      renderDashboard();
+    }
+
+    function isShiftActive(shift) {
+      const now = new Date();
+      const today = now.toLocaleDateString("en-US", { weekday: "long" });
+      const current = now.getHours() * 60 + now.getMinutes();
+      const [startH, startM] = String(shift.start || "00:00").split(":").map(Number);
+      const [endH, endM] = String(shift.end || "00:00").split(":").map(Number);
+      const start = startH * 60 + startM;
+      let end = endH * 60 + endM;
+      if (end < start) end += 1440;
+      return shift.day === today && current >= start && current <= end;
+    }
+
+    function formatTime(time) {
+      const [h, m] = String(time || "00:00").split(":").map(Number);
+      const suffix = h >= 12 ? "PM" : "AM";
+      const hour = h % 12 || 12;
+      return `${hour}:${String(m).padStart(2, "0")} ${suffix}`;
+    }
+
+    function renderShifts() {
+      const c = themeCopy[currentTheme];
+      const list = document.getElementById("shiftList");
+      const active = shiftState.filter(isShiftActive);
+      document.getElementById("workingBadge").textContent = active.length ? active.map(s => `${s.person}: ${c.activeWork}`).join(" · ") : "Nobody active";
+      list.innerHTML = "";
+      shiftState.forEach(shift => {
+        const activeNow = isShiftActive(shift);
+        const card = document.createElement("div");
+        card.className = `hud p-4 ${activeNow ? "critical" : ""}`;
+        card.innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-2xl font-black">${shift.person}</p><p class="opacity-70 text-sm">${shift.job} · ${shift.day}</p><p class="font-black mt-3">${formatTime(shift.start)} – ${formatTime(shift.end)}</p></div><span class="hud px-3 py-1 font-black">${activeNow ? c.activeWork : c.inactiveWork}</span></div>`;
+        list.appendChild(card);
+      });
+    }
+
+    function averageStress() {
+      const values = Object.values(stressState).map(Number);
+      if (!values.length) return 2;
+      return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
+    }
+
+    function renderStress() {
+      const c = themeCopy[currentTheme];
+      const level = averageStress();
+      const percent = level * 25;
+      document.getElementById("stressBar").style.width = `${percent}%`;
+      let text = level === 1 ? "GOOD" : level === 2 ? "OKAY" : level === 3 ? "ROUGH" : c.criticalStress;
+      document.getElementById("stressStat").textContent = text;
+      document.getElementById("stressWarning").textContent = level === 4 ? c.criticalStress : "House pressure is manageable. Keep it clean.";
+      document.getElementById("stressStat").classList.toggle("critical", level === 4);
+      document.getElementById("stressWarning").classList.toggle("critical", level === 4);
+      document.documentElement.classList.toggle("engine-critical", level === 4 && currentTheme === "jamie-karlach");
+      restartTypewriter();
+    }
+
+    function extractAmount(text) {
+      const match = String(text).match(/\$?\s*(\d+(\.\d{1,2})?)/);
+      return match ? Number(match[1]) : 0;
+    }
+
+    function runAffordTool() {
+      const input = document.getElementById("affordInput").value;
+      const amount = extractAmount(input);
+      const box = document.getElementById("affordResultBox");
+      const verdict = document.getElementById("affordVerdict");
+      const explanation = document.getElementById("affordExplanation");
+      const die = document.getElementById("karlachDie");
+      const c = themeCopy[currentTheme];
+      const fund = fundState.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      const bills = billsState.filter(b => !b.paid).reduce((sum, b) => sum + Number(b.amount || 0), 0);
+      const safeMoney = fund - bills;
+      document.getElementById("affordBudgetBadge").textContent = `Fund: $${fund} · Bills: $${bills} · Safe: $${safeMoney}`;
+      if (!amount) { box.classList.add("hidden"); return; }
+      box.classList.remove("hidden");
+      const ok = safeMoney - amount >= 0;
+      if (currentTheme === "jamie-karlach") {
+        die.classList.remove("hidden");
+        die.classList.remove("die-roll");
+        void die.offsetWidth;
+        die.classList.add("die-roll");
+        die.textContent = ok ? "🎲 20" : "🎲 1";
+      } else die.classList.add("hidden");
+      verdict.textContent = ok ? c.affordSafe : c.affordBad;
+      verdict.className = `text-center text-5xl sm:text-7xl font-black tracking-widest border-2 p-6 ${ok ? "safe" : "bad"}`;
+      explanation.textContent = ok ? `Approved. Spending $${amount} will not wreck the house after bills.` : currentTheme === "jamie-karlach" ? `Crit Fail — Do not buy this shit, Soldier! $${amount} leaves the camp too weak.` : `Denied. Spending $${amount} leaves the house broke after bills.`;
+    }
+
+    function getWeekKey(date = new Date()) {
+      const d = new Date(date);
+      const diffToSunday = d.getDate() - d.getDay();
+      const sunday = new Date(d.setDate(diffToSunday));
+      sunday.setHours(0,0,0,0);
+      return sunday.toISOString().slice(0,10);
+    }
+    function getTodayKey() { return new Date().toISOString().slice(0,10); }
+    function getNextSundayMidnight() {
+      const now = new Date();
+      const next = new Date(now);
+      const days = (7 - now.getDay()) % 7 || 7;
+      next.setDate(now.getDate() + days);
+      next.setHours(0,0,0,0);
+      return next;
+    }
+
+    function renderQuestBoard() {
+      document.getElementById("xp-Aden").textContent = xpState.totals?.Aden || 0;
+      document.getElementById("xp-Edward").textContent = xpState.totals?.Edward || 0;
+      document.getElementById("xp-Jamie").textContent = xpState.totals?.Jamie || 0;
+      document.getElementById("adenInsult").classList.toggle("hidden", Number(xpState.totals?.Aden || 0) >= 10);
+      const list = document.getElementById("dailyQuestList");
+      const person = document.getElementById("questPerson").value;
+      const today = getTodayKey();
+      list.innerHTML = "";
+      choreTasks.forEach(task => {
+        const completionId = `${today}_${person}_${task.id}`;
+        const completed = Boolean(xpState.completions?.[completionId]);
+        const card = document.createElement("div");
+        card.id = `quest-card-${task.id}`;
+        card.className = `hud p-4 flex items-center justify-between gap-3 ${completed ? "opacity-60" : ""}`;
+        card.innerHTML = `<div><p class="text-xl font-black">${task.names[person]}</p><p class="opacity-70 text-sm">${task.xp} XP · ${person}</p></div><button onclick="completeQuest('${task.id}')" class="btn px-4 py-3" ${completed ? "disabled" : ""}>${completed ? "CLAIMED" : "CLAIM XP"}</button>`;
+        list.appendChild(card);
+      });
+      if (xpState.lastWinner) showVictoryBanner(xpState.lastWinner);
+    }
+
+    function showVictoryBanner(winner) {
+      const banner = document.getElementById("victoryBanner");
+      banner.textContent = `VICTORY ACHIEVED. ${winner} is the Sovereign of the Week. They choose the family activity. No excuses. No bullshit.`;
+      banner.classList.remove("hidden");
+      banner.classList.add("victory-glow");
+    }
+
+    function updateWeeklyCountdown() {
+      const diff = getNextSundayMidnight() - new Date();
+      const days = Math.floor(diff / 86400000);
+      const hours = Math.floor((diff % 86400000) / 3600000);
+      const mins = Math.floor((diff % 3600000) / 60000);
+      const secs = Math.floor((diff % 60000) / 1000);
+      document.getElementById("weeklyCountdown").textContent = `Weekly reset: ${days}d ${hours}h ${mins}m ${secs}s`;
+    }
+
+    async function completeQuest(taskId) {
+      const person = document.getElementById("questPerson").value;
+      const weekKey = getWeekKey();
+      const today = getTodayKey();
+      const completionId = `${today}_${person}_${taskId}`;
+      if (xpState.completions?.[completionId]) return;
+      const task = choreTasks.find(t => t.id === taskId);
+      const newTotal = Number(xpState.totals?.[person] || 0) + task.xp;
+      await update(ref(db, `${BASE}/xpWeeks/${weekKey}`), {
+        [`totals/${person}`]: newTotal,
+        [`completions/${completionId}`]: { person, taskId, xp: task.xp, completedAt: Date.now() }
+      });
+      if (person === "Aden") {
+        const card = document.getElementById(`quest-card-${taskId}`);
+        if (card) { card.classList.remove("dragon-soul"); void card.offsetWidth; card.classList.add("dragon-soul"); }
+      }
+    }
+
+    async function checkSundayVictoryReset() {
+      const now = new Date();
+      if (now.getDay() !== 0 || now.getHours() !== 0) return;
+      const today = getTodayKey();
+      if (localStorage.getItem("housegrid-last-reset") === today) return;
+      localStorage.setItem("housegrid-last-reset", today);
+      const oldWeek = getWeekKey(new Date(Date.now() - 86400000));
+      const newWeek = getWeekKey();
+      const totals = xpState.totals || { Aden:0, Edward:0, Jamie:0 };
+      const winner = Object.entries(totals).sort((a,b) => b[1] - a[1])[0]?.[0] || "Nobody";
+      await update(ref(db, `${BASE}/xpWeeks/${oldWeek}`), { lastWinner: winner, endedAt: Date.now() });
+      await set(ref(db, `${BASE}/xpWeeks/${newWeek}`), { totals: { Aden:0, Edward:0, Jamie:0 }, completions: {}, createdAt: Date.now() });
+      showVictoryBanner(winner);
+    }
+
+    async function startFirebase() { await signInAnonymously(auth); }
+
+    async function seedDatabaseOnce() {
+      const seeded = await get(ref(db, `${BASE}/meta/seeded`));
+      if (!seeded.exists()) await set(ref(db, BASE), defaultData);
+    }
+
+    function setupListeners() {
+      onValue(ref(db, `${BASE}/groceries`), snap => { groceryState = snapToArray(snap).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); renderGroceries(); runAffordTool(); });
+      onValue(ref(db, `${BASE}/bills`), snap => { billsState = snapToArray(snap); renderBills(); runAffordTool(); });
+      onValue(ref(db, `${BASE}/fund`), snap => { fundState = snapToArray(snap).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)); renderFund(); runAffordTool(); });
+      onValue(ref(db, `${BASE}/shifts`), snap => { shiftState = snapToArray(snap); renderShifts(); });
+      onValue(ref(db, `${BASE}/stress`), snap => { stressState = snap.val() || { Aden:2, Edward:2, Jamie:2 }; renderStress(); });
+      onValue(ref(db, `${BASE}/xpWeeks/${getWeekKey()}`), snap => { const data = snap.val() || {}; xpState = { totals: data.totals || { Aden:0, Edward:0, Jamie:0 }, completions: data.completions || {}, lastWinner: data.lastWinner || null }; renderQuestBoard(); });
+    }
+
+    window.toggleGrocery = async id => {
+      const item = groceryState.find(g => g.id === id);
+      if (!item) return;
+      const row = document.getElementById(`grocery-${id}`);
+      if (currentTheme === "edward-fo76" && !item.bought && row) row.classList.add("scrap-out");
+      await update(ref(db, `${BASE}/groceries/${id}`), { bought: !item.bought });
+    };
+
+    window.toggleBillStatus = async id => {
+      const bill = billsState.find(b => b.id === id);
+      if (!bill) return;
+      await update(ref(db, `${BASE}/bills/${id}`), { paid: !bill.paid });
+    };
+
+    window.setStress = async level => {
+      await set(ref(db, `${BASE}/stress/${currentUser}`), Number(level));
+    };
+
+    window.runAffordTool = runAffordTool;
+    window.completeQuest = completeQuest;
+
+    document.getElementById("themeSelect").addEventListener("change", e => applyTheme(e.target.value));
+    document.getElementById("questPerson").addEventListener("change", renderQuestBoard);
+
+    document.getElementById("groceryForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      await push(ref(db, `${BASE}/groceries`), { name: itemName.value.trim(), price: Number(itemPrice.value), priority: itemPriority.value, person: currentUser, bought: false, createdAt: Date.now() });
+      e.target.reset();
+      groceryAlert.classList.remove("hidden");
+      setTimeout(() => groceryAlert.classList.add("hidden"), 3000);
     });
 
-    function checkSpend() {
-      const amount = Number(document.getElementById("spendInput").value);
-      const box = document.getElementById("spendResult");
-      const title = document.getElementById("resultTitle");
-      const text = document.getElementById("resultText");
+    document.getElementById("fundForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      await push(ref(db, `${BASE}/fund`), { person: fundPerson.value, amount: Number(fundAmount.value), reason: fundReason.value.trim(), createdAt: Date.now() });
+      e.target.reset();
+    });
 
-      box.classList.remove("hidden");
+    document.getElementById("shiftForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      await push(ref(db, `${BASE}/shifts`), { person: shiftPerson.value, job: shiftJob.value.trim(), day: shiftDay.value, start: shiftStart.value, end: shiftEnd.value, createdAt: Date.now() });
+      e.target.reset();
+      shiftJob.value = "Sonic";
+    });
 
-      if (!amount || amount <= 0) {
-        title.textContent = "Enter a real amount.";
-        text.textContent = "Example: 20, 35, or 50.";
-        return;
-      }
+    document.getElementById("loginBtn").addEventListener("click", async () => {
+      const pass = loginPassword.value;
+      if (pass !== HOUSE_PASSWORD) { loginError.classList.remove("hidden"); return; }
+      currentUser = loginPerson.value;
+      localStorage.setItem("housegrid-user", currentUser);
+      localStorage.setItem("housegrid-unlocked", "true");
+      loginScreen.classList.add("hidden");
+      await startFirebase();
+    });
 
-      if (amount <= 20) {
-        title.textContent = "Safe";
-        text.textContent = "This should not hurt the house budget.";
-      } else if (amount <= 45) {
-        title.textContent = "Risky";
-        text.textContent = "Only spend this if groceries and gas are already covered.";
-      } else {
-        title.textContent = "Bad idea";
-        text.textContent = "Too much right now. Check bills, food, and next payday first.";
-      }
+    onAuthStateChanged(auth, async user => {
+      if (!user) return;
+      await seedDatabaseOnce();
+      setupListeners();
+      updateWeeklyCountdown();
+      setInterval(updateWeeklyCountdown, 1000);
+      setInterval(checkSundayVictoryReset, 30000);
+      setInterval(renderShifts, 60000);
+    });
+
+    applyTheme(currentTheme);
+    if (localStorage.getItem("housegrid-unlocked") === "true") {
+      loginScreen.classList.add("hidden");
+      startFirebase();
     }
   </script>
 </body>
