@@ -25,7 +25,7 @@ const firebaseConfig = {
 };
 
 /* CHANGE THIS PASSWORD */
-const HOUSE_PASSWORD = "change-this-password";
+const HOUSE_PASSWORD = "housegrid";
 
 const HOUSE_ID = "edward-jamie-aden-house";
 const BASE = `houses/${HOUSE_ID}`;
@@ -54,7 +54,7 @@ let xpState = {
 };
 
 /* =========================
-   DEFAULT DATABASE DATA
+   DEFAULT DATA
    ========================= */
 
 const defaultData = {
@@ -97,7 +97,7 @@ const defaultData = {
 };
 
 /* =========================
-   THEME COPY
+   THEME TEXT
    ========================= */
 
 const themeCopy = {
@@ -160,7 +160,7 @@ const themeCopy = {
 };
 
 /* =========================
-   CHORE TASKS
+   CHORES
    ========================= */
 
 const choreTasks = [
@@ -237,6 +237,17 @@ function $(id) {
   return document.getElementById(id);
 }
 
+function safeText(value) {
+  return String(value ?? "").replace(/[<>&"]/g, (char) => {
+    return {
+      "<": "&lt;",
+      ">": "&gt;",
+      "&": "&amp;",
+      '"': "&quot;"
+    }[char];
+  });
+}
+
 function snapToArray(snapshot) {
   if (!snapshot.exists()) return [];
   return Object.entries(snapshot.val()).map(([id, data]) => ({ id, ...data }));
@@ -266,8 +277,10 @@ function getNextSundayMidnight() {
   const now = new Date();
   const next = new Date(now);
   const days = (7 - now.getDay()) % 7 || 7;
+
   next.setDate(now.getDate() + days);
   next.setHours(0, 0, 0, 0);
+
   return next;
 }
 
@@ -298,10 +311,6 @@ function applyTheme(theme) {
 
   renderAll();
 }
-
-/* =========================
-   RENDER EVERYTHING
-   ========================= */
 
 function renderAll() {
   renderDashboard();
@@ -337,6 +346,7 @@ function priorityLabel(priority) {
   if (currentTheme === "aden-skyrim" && priority === "High") return "DRAGON-LEVEL NEED";
   if (currentTheme === "edward-fo76" && priority === "High") return "C.A.M.P. CRITICAL";
   if (currentTheme === "jamie-karlach" && priority === "High") return "HELLFIRE NEED";
+
   return String(priority).toUpperCase();
 }
 
@@ -352,18 +362,18 @@ function renderGroceries() {
     row.id = `grocery-${item.id}`;
     row.className = "hud p-4 flex items-center justify-between gap-3";
 
+    const knownTag =
+      currentTheme === "edward-fo76" && item.bought
+        ? `<span class="known-tag ml-2">(KNOWN)</span>`
+        : "";
+
     row.innerHTML = `
       <div>
         <p class="text-xl font-black ${item.bought ? "line-through opacity-60" : ""}">
-          ${item.name}
-          ${
-            currentTheme === "edward-fo76" && item.bought
-              ? `<span class="known-tag ml-2">(KNOWN)</span>`
-              : ""
-          }
+          ${safeText(item.name)} ${knownTag}
         </p>
         <p class="opacity-70 text-sm">
-          Added by ${item.person || "House"} · $${item.price || 0} · ${priorityLabel(item.priority)}
+          Added by ${safeText(item.person || "House")} · $${Number(item.price || 0)} · ${safeText(priorityLabel(item.priority))}
         </p>
       </div>
 
@@ -422,13 +432,13 @@ function renderBills() {
 
     row.innerHTML = `
       <div>
-        <p class="text-xl font-black">${bill.name}</p>
-        <p class="opacity-70 text-sm">Usually handled by ${bill.payer}</p>
+        <p class="text-xl font-black">${safeText(bill.name)}</p>
+        <p class="opacity-70 text-sm">Usually handled by ${safeText(bill.payer)}</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <span class="hud px-3 py-1 font-black">$${bill.amount}</span>
-        <span class="hud px-3 py-1 font-black">${bill.dueIn} DAYS</span>
+        <span class="hud px-3 py-1 font-black">$${Number(bill.amount || 0)}</span>
+        <span class="hud px-3 py-1 font-black">${Number(bill.dueIn || 0)} DAYS</span>
         <button onclick="toggleBillStatus('${bill.id}')" class="btn px-4 py-2">
           ${status}
         </button>
@@ -480,10 +490,10 @@ function renderFund() {
 
     row.innerHTML = `
       <div>
-        <p class="font-black">${item.person} added $${item.amount}</p>
-        <p class="opacity-70 text-sm">For ${item.reason}</p>
+        <p class="font-black">${safeText(item.person)} added $${Number(item.amount || 0)}</p>
+        <p class="opacity-70 text-sm">For ${safeText(item.reason)}</p>
       </div>
-      <span class="hud px-3 py-1 font-black">$${item.amount}</span>
+      <span class="hud px-3 py-1 font-black">$${Number(item.amount || 0)}</span>
     `;
 
     feed.appendChild(row);
@@ -540,8 +550,8 @@ function renderShifts() {
     card.innerHTML = `
       <div class="flex items-start justify-between gap-3">
         <div>
-          <p class="text-2xl font-black">${shift.person}</p>
-          <p class="opacity-70 text-sm">${shift.job} · ${shift.day}</p>
+          <p class="text-2xl font-black">${safeText(shift.person)}</p>
+          <p class="opacity-70 text-sm">${safeText(shift.job)} · ${safeText(shift.day)}</p>
           <p class="font-black mt-3">${formatTime(shift.start)} – ${formatTime(shift.end)}</p>
         </div>
 
@@ -625,9 +635,14 @@ function runAffordTool() {
     .filter((b) => !b.paid)
     .reduce((sum, b) => sum + Number(b.amount || 0), 0);
 
-  const safeMoney = fund - bills;
+  const groceryNeed = groceryState
+    .filter((g) => !g.bought)
+    .reduce((sum, g) => sum + Number(g.price || 0), 0);
 
-  $("affordBudgetBadge").textContent = `Fund: $${fund} · Bills: $${bills} · Safe: $${safeMoney}`;
+  const safeMoney = fund - bills - groceryNeed;
+
+  $("affordBudgetBadge").textContent =
+    `Fund: $${fund} · Bills: $${bills} · Food: $${groceryNeed} · Safe: $${safeMoney}`;
 
   if (!amount) {
     box.classList.add("hidden");
@@ -654,10 +669,10 @@ function runAffordTool() {
   }`;
 
   explanation.textContent = ok
-    ? `Approved. Spending $${amount} will not wreck the house after bills.`
+    ? `Approved. Spending $${amount} will not wreck the house after bills and groceries.`
     : currentTheme === "jamie-karlach"
       ? `Crit Fail — Do not buy this shit, Soldier! $${amount} leaves the camp too weak.`
-      : `Denied. Spending $${amount} leaves the house broke after bills.`;
+      : `Denied. Spending $${amount} leaves the house broke after bills and groceries.`;
 }
 
 window.runAffordTool = runAffordTool;
@@ -694,8 +709,8 @@ function renderQuestBoard() {
 
     card.innerHTML = `
       <div>
-        <p class="text-xl font-black">${task.names[person]}</p>
-        <p class="opacity-70 text-sm">${task.xp} XP · ${person}</p>
+        <p class="text-xl font-black">${safeText(task.names[person])}</p>
+        <p class="opacity-70 text-sm">${task.xp} XP · ${safeText(person)}</p>
       </div>
 
       <button onclick="completeQuest('${task.id}')" class="btn px-4 py-3" ${
@@ -714,7 +729,9 @@ function renderQuestBoard() {
 function showVictoryBanner(winner) {
   const banner = $("victoryBanner");
 
-  banner.textContent = `VICTORY ACHIEVED. ${winner} is the Sovereign of the Week. They choose the family activity. No excuses. No bullshit.`;
+  banner.textContent =
+    `VICTORY ACHIEVED. ${winner} is the Sovereign of the Week. They choose the family activity. No excuses. No bullshit.`;
+
   banner.classList.remove("hidden");
   banner.classList.add("victory-glow");
 }
@@ -816,6 +833,7 @@ function setupListeners() {
     groceryState = snapToArray(snap).sort(
       (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
     );
+
     renderGroceries();
     runAffordTool();
   });
@@ -830,6 +848,7 @@ function setupListeners() {
     fundState = snapToArray(snap).sort(
       (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
     );
+
     renderFund();
     runAffordTool();
   });
@@ -918,8 +937,8 @@ $("shiftForm").addEventListener("submit", async (e) => {
    LOGIN
    ========================= */
 
-$("loginBtn").addEventListener("click", async () => {
-  const pass = $("loginPassword").value;
+async function handleLogin() {
+  const pass = $("loginPassword").value.trim();
 
   if (pass !== HOUSE_PASSWORD) {
     $("loginError").classList.remove("hidden");
@@ -934,6 +953,22 @@ $("loginBtn").addEventListener("click", async () => {
   $("loginScreen").classList.add("hidden");
 
   await startFirebase();
+}
+
+$("loginBtn").addEventListener("click", handleLogin);
+
+$("loginPassword").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    handleLogin();
+  }
+});
+
+$("loginPerson").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    handleLogin();
+  }
 });
 
 /* =========================
