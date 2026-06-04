@@ -1,1 +1,436 @@
-z
+:root {
+  --bg: #171717;
+  --bg2: #3a3026;
+  --card: rgba(224, 205, 164, 0.92);
+  --text: #201710;
+  --muted: #5f5140;
+  --accent: #79c9ff;
+  --accent2: #d7ecff;
+  --danger: #8b0000;
+  --border: rgba(180, 190, 205, 0.9);
+  --font: Georgia, "Times New Roman", serif;
+  --radius: 16px;
+  --shadow: 0 0 35px rgba(121, 201, 255, 0.25);
+}
+
+/* ADEN — SKYRIM */
+html[data-theme="aden-skyrim"] {
+  --bg: #171717;
+  --bg2: #3a3026;
+  --card: rgba(224, 205, 164, 0.92);
+  --text: #201710;
+  --muted: #5f5140;
+  --accent: #79c9ff;
+  --accent2: #d7ecff;
+  --danger: #8b0000;
+  --border: rgba(180, 190, 205, 0.9);
+  --font: Georgia, "Times New Roman", serif;
+  --radius: 16px;
+  --shadow: 0 0 35px rgba(121, 201, 255, 0.25);
+}
+
+/* EDWARD — FALLOUT 76 */
+html[data-theme="edward-fo76"] {
+  --bg: #020202;
+  --bg2: #101000;
+  --card: rgba(18, 16, 2, 0.94);
+  --text: #ffce00;
+  --muted: #d6b84a;
+  --accent: #ffce00;
+  --accent2: #fff48a;
+  --danger: #ff3b2f;
+  --border: rgba(255, 206, 0, 0.85);
+  --font: Arial Black, Impact, system-ui, sans-serif;
+  --radius: 6px;
+  --shadow: 0 0 30px rgba(255, 206, 0, 0.22);
+}
+
+/* JAMIE — KARLACH */
+html[data-theme="jamie-karlach"] {
+  --bg: #070305;
+  --bg2: #2a070b;
+  --card: rgba(32, 6, 8, 0.92);
+  --text: #fff1dc;
+  --muted: #d6a66b;
+  --accent: #ff4500;
+  --accent2: #ffb347;
+  --danger: #ff1f1f;
+  --border: rgba(255, 69, 0, 0.65);
+  --font: Garamond, Georgia, serif;
+  --radius: 20px;
+  --shadow: 0 0 42px rgba(255, 69, 0, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(circle at center, transparent 45%, rgba(0, 0, 0, 0.76)),
+    radial-gradient(circle at 30% 10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 35%),
+    linear-gradient(135deg, var(--bg), var(--bg2));
+  overflow-x: hidden;
+}
+
+html[data-theme="aden-skyrim"] body {
+  background:
+    radial-gradient(circle at center, rgba(121, 201, 255, 0.12), transparent 35%),
+    linear-gradient(135deg, #1d1d1d, #3a3026 45%, #161616);
+}
+
+/* CRT / TERMINAL OVERLAY */
+.terminal-fx::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.055) 0px,
+      rgba(255, 255, 255, 0.055) 1px,
+      transparent 2px,
+      transparent 4px
+    ),
+    radial-gradient(circle at center, transparent 48%, rgba(0, 0, 0, 0.78));
+  animation: phosphorFlicker 1.8s infinite alternate;
+}
+
+html[data-theme="jamie-karlach"] .terminal-fx::before {
+  display: none;
+}
+
+@keyframes phosphorFlicker {
+  from {
+    opacity: 0.92;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* BASE UI */
+.hud {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(14px);
+}
+
+.hud-title {
+  text-shadow: 0 0 14px var(--accent);
+}
+
+html[data-theme="aden-skyrim"] .hud {
+  border: 2px solid var(--border);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 0 28px rgba(121, 201, 255, 0.18);
+}
+
+html[data-theme="edward-fo76"] .hud {
+  border: 2px solid var(--border);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.8),
+    0 0 0 4px rgba(255, 206, 0, 0.25),
+    var(--shadow);
+  text-transform: uppercase;
+  clip-path: polygon(
+    0 8px,
+    8px 8px,
+    8px 0,
+    calc(100% - 8px) 0,
+    calc(100% - 8px) 8px,
+    100% 8px,
+    100% calc(100% - 8px),
+    calc(100% - 8px) calc(100% - 8px),
+    calc(100% - 8px) 100%,
+    8px 100%,
+    8px calc(100% - 8px),
+    0 calc(100% - 8px)
+  );
+}
+
+/* BUTTONS */
+.btn {
+  background: color-mix(in srgb, var(--accent) 18%, black);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 6px);
+  color: var(--text);
+  font-weight: 900;
+  box-shadow: var(--shadow);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  cursor: pointer;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 36px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+html[data-theme="jamie-karlach"] .btn {
+  animation: enginePulse 1.8s infinite alternate;
+}
+
+@keyframes enginePulse {
+  from {
+    box-shadow: 0 0 18px rgba(255, 69, 0, 0.22);
+  }
+  to {
+    box-shadow: 0 0 46px rgba(255, 69, 0, 0.58);
+  }
+}
+
+/* INPUTS */
+input,
+select,
+textarea {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 6px);
+  outline: none;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+/* LAVA HEADER */
+html[data-theme="jamie-karlach"] .lava-title {
+  background: linear-gradient(90deg, #ffdd8a, #ff4500, #ff1010, #ffb347);
+  background-size: 300% auto;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: lavaFlow 3s linear infinite;
+}
+
+@keyframes lavaFlow {
+  to {
+    background-position: 300% center;
+  }
+}
+
+/* GLITCH */
+.glitch-jitter:hover {
+  animation: glitchJitter 0.14s infinite;
+}
+
+@keyframes glitchJitter {
+  0% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(1px, -1px);
+  }
+  50% {
+    transform: translate(-2px, 1px);
+  }
+  75% {
+    transform: translate(2px, 2px);
+  }
+  100% {
+    transform: translate(-1px, 0);
+  }
+}
+
+/* TYPEWRITER STATS */
+.typewriter {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: typing 0.9s steps(12, end);
+}
+
+@keyframes typing {
+  from {
+    max-width: 0;
+  }
+  to {
+    max-width: 100%;
+  }
+}
+
+/* CRITICAL STATE */
+.critical {
+  color: var(--danger);
+  animation: violentFlicker 0.08s infinite;
+  text-shadow: 0 0 16px var(--danger);
+}
+
+@keyframes violentFlicker {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0);
+  }
+  50% {
+    opacity: 0.45;
+    transform: translate(1px, -1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-1px, 1px);
+  }
+}
+
+/* JAMIE ENGINE CRITICAL */
+html[data-theme="jamie-karlach"].engine-critical body {
+  animation: scorchedPulse 0.8s infinite alternate;
+}
+
+@keyframes scorchedPulse {
+  from {
+    box-shadow: inset 0 0 80px rgba(255, 69, 0, 0.12);
+  }
+  to {
+    box-shadow: inset 0 0 180px rgba(255, 0, 0, 0.45);
+  }
+}
+
+/* EDWARD KNOWN TAG */
+.known-tag {
+  background: rgba(255, 206, 0, 0.22);
+  color: #ffce00;
+  border: 1px solid rgba(255, 206, 0, 0.75);
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+/* EDWARD SCRAP ANIMATION */
+.scrap-out {
+  animation: scrapOut 0.55s forwards;
+  mask-image: linear-gradient(90deg, #000 40%, transparent 70%);
+  -webkit-mask-image: linear-gradient(90deg, #000 40%, transparent 70%);
+}
+
+@keyframes scrapOut {
+  to {
+    opacity: 0;
+    transform: scale(0.94) translateX(18px);
+    filter: blur(3px);
+  }
+}
+
+/* ADEN DRAGON SOUL */
+.dragon-soul {
+  animation: dragonSoul 900ms ease-out;
+}
+
+@keyframes dragonSoul {
+  0% {
+    box-shadow: 0 0 0 rgba(121, 201, 255, 0);
+    transform: scale(1);
+  }
+  40% {
+    box-shadow: 0 0 80px rgba(121, 201, 255, 0.9);
+    transform: scale(1.03);
+    filter: brightness(1.4);
+  }
+  100% {
+    box-shadow: var(--shadow);
+    transform: scale(1);
+  }
+}
+
+/* WEEKLY VICTORY */
+.victory-glow {
+  animation: victoryGlow 1.2s infinite alternate;
+}
+
+@keyframes victoryGlow {
+  from {
+    box-shadow: 0 0 25px color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+  to {
+    box-shadow: 0 0 80px color-mix(in srgb, var(--accent) 80%, transparent);
+  }
+}
+
+/* KARLACH D20 */
+.die-roll {
+  animation: dieRoll 0.8s ease-in-out;
+}
+
+@keyframes dieRoll {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  25% {
+    transform: rotate(90deg) scale(1.2);
+  }
+  50% {
+    transform: rotate(180deg) scale(0.9);
+  }
+  75% {
+    transform: rotate(360deg) scale(1.25);
+  }
+  100% {
+    transform: rotate(720deg) scale(1);
+  }
+}
+
+/* AFFORD TOOL RESULTS */
+.safe {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.14);
+  text-shadow: 0 0 18px rgba(34, 197, 94, 0.75);
+  box-shadow: 0 0 45px rgba(34, 197, 94, 0.28);
+}
+
+.bad {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.16);
+  text-shadow: 0 0 18px rgba(239, 68, 68, 0.85);
+  box-shadow: 0 0 45px rgba(239, 68, 68, 0.38);
+}
+
+.warn {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.16);
+  text-shadow: 0 0 18px rgba(245, 158, 11, 0.85);
+  box-shadow: 0 0 45px rgba(245, 158, 11, 0.38);
+}
+
+/* MOBILE POLISH */
+@media (max-width: 640px) {
+  .hud {
+    border-radius: calc(var(--radius) - 4px);
+  }
+
+  .hud-title {
+    font-size: clamp(1.8rem, 10vw, 3rem);
+  }
+
+  button,
+  input,
+  select {
+    min-height: 46px;
+  }
+}
+
+/* REDUCED MOTION */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
