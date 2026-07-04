@@ -15,8 +15,17 @@ export async function api<T>(
   const res = await fetch(`${API_URL}${endpoint}`, { ...options, headers });
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const text = await res.text();
+    let message = `Request failed (${res.status})`;
+    try {
+      const err = JSON.parse(text);
+      message = err.error || message;
+    } catch {
+      if (text.includes('Cannot POST') || text.includes('Cannot GET')) {
+        message = 'API not reachable — redeploy may still be in progress';
+      }
+    }
+    throw new Error(message);
   }
 
   return res.json();

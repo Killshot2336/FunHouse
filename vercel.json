@@ -4,9 +4,14 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "npm install && cd frontend && npm install && cd ../backend && npm install",
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/api/(.*)", "destination": "/api" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "backend/dist/**"
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

@@ -12,6 +12,8 @@ import { isDemoMode } from './lib/supabase.js';
 
 dotenv.config();
 
+process.env.VERCEL = process.env.VERCEL || (process.env.VERCEL_ENV ? '1' : '');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
