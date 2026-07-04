@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore, useNotificationStore } from '../stores';
+import { HoloCard } from './effects/HoloCard';
 import { api } from '../lib/api';
 
 interface RivalLog {
@@ -80,11 +81,8 @@ export function RivalBattle() {
   const lost = battle.outcome === 'rival_win';
 
   return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="theme-card p-6 border-2 border-red-500/40 card-glow battle-pulse"
-    >
+    <HoloCard intense delay={0.1} className="battle-pulse border-red-500/40">
+      <div className="p-6">
       <div className="flex items-center justify-between mb-1">
         <div>
           <h2 className="font-bold text-lg tracking-widest text-red-400 glow-text">FRIDAY FACTION WAR</h2>
@@ -167,6 +165,7 @@ export function RivalBattle() {
           ))}
         </div>
       )}
-    </motion.div>
+      </div>
+    </HoloCard>
   );
 }

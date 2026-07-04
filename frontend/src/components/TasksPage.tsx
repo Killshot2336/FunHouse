@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore, useBossStore, useNotificationStore } from '../stores';
+import { useCinematicStore } from '../stores/cinematic';
 import { api, playSound } from '../lib/api';
 import { themeCopy } from '../themes/copy';
 
@@ -22,11 +23,12 @@ export function TasksPage() {
   const { user, token } = useAuthStore();
   const { triggerDamage } = useBossStore();
   const notify = useNotificationStore((s) => s.show);
+  const { triggerShake, triggerFlash, burst: spawnBurst } = useCinematicStore();
   const copy = themeCopy[user!.theme];
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [completing, setCompleting] = useState<string | null>(null);
   const [animating, setAnimating] = useState<string | null>(null);
-  const [burst, setBurst] = useState<string | null>(null);
+  const [burstTaskId, setBurstTaskId] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -46,18 +48,21 @@ export function TasksPage() {
   const completeTask = async (id: string) => {
     setCompleting(id);
     setAnimating(id);
-    setBurst(id);
+    setBurstTaskId(id);
     try {
       await api(`/tasks/complete/${id}`, { method: 'POST' }, token);
       playSound(user!.theme, 'complete');
       triggerDamage();
+      triggerShake();
+      triggerFlash('success');
+      spawnBurst(50, 50, 50);
       notify(copy.notifications.taskComplete, 'success');
       await fetchTasks();
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Failed', 'error');
     } finally {
       setCompleting(null);
-      setTimeout(() => { setAnimating(null); setBurst(null); }, 800);
+      setTimeout(() => { setAnimating(null); setBurstTaskId(null); }, 800);
     }
   };
 
@@ -97,7 +102,7 @@ export function TasksPage() {
                   transition={{ delay: i * 0.08 }}
                   className={`theme-card p-4 flex items-center gap-4 card-glow ${task.completed ? 'opacity-50' : ''} ${animating === task.id ? 'damage-flash' : ''}`}
                 >
-                  {burst === task.id && <div className="action-burst" />}
+                  {burstTaskId === task.id && <div className="action-burst" />}
                   <motion.span
                     className="text-3xl"
                     animate={animating === task.id ? { scale: [1, 1.4, 1], rotate: [0, 10, -10, 0] } : {}}

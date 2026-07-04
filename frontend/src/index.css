@@ -289,3 +289,222 @@
   transform: scale(0.96);
   box-shadow: 0 0 25px var(--accent-glow);
 }
+
+/* ═══ CINEMATIC AAA LAYER ═══ */
+
+.cinematic-vignette {
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+}
+
+.cinematic-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity: 0.5;
+}
+
+.cinematic-flash-success { background: radial-gradient(circle, rgba(57,255,20,0.4), transparent 70%); }
+.cinematic-flash-damage { background: radial-gradient(circle, rgba(255,50,50,0.5), transparent 70%); }
+.cinematic-flash-legendary { background: radial-gradient(circle, rgba(255,215,0,0.5), transparent 70%); }
+.cinematic-flash-portal { background: radial-gradient(circle, rgba(57,255,20,0.6), rgba(0,255,100,0.3), transparent 80%); }
+
+/* Holo cards */
+.holo-card {
+  position: relative;
+  border-radius: 12px;
+  background: var(--card-bg);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+}
+
+.holo-card-intense {
+  box-shadow: 0 0 30px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.1);
+}
+
+.holo-card-border {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    transparent 40%,
+    transparent 60%,
+    var(--accent-glow)
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: holoBorderSpin 4s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes holoBorderSpin {
+  0% { filter: hue-rotate(0deg); opacity: 0.8; }
+  50% { opacity: 1; }
+  100% { filter: hue-rotate(30deg); opacity: 0.8; }
+}
+
+.holo-card-shine {
+  position: absolute;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background: linear-gradient(
+    45deg,
+    transparent 40%,
+    rgba(255,255,255,0.03) 50%,
+    transparent 60%
+  );
+  animation: holoShine 3s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes holoShine {
+  0% { transform: translateX(-30%) translateY(-30%); }
+  100% { transform: translateX(30%) translateY(30%); }
+}
+
+.holo-card-content { position: relative; }
+
+/* Portal ring on login */
+.portal-ring {
+  border: 2px solid rgba(57, 255, 20, 0.3);
+  border-radius: 50%;
+  animation: portalRingPulse 3s ease-in-out infinite;
+  box-shadow: 0 0 60px rgba(57, 255, 20, 0.2), inset 0 0 40px rgba(57, 255, 20, 0.1);
+}
+
+@keyframes portalRingPulse {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.5; }
+  50% { transform: translateX(-50%) scale(1.1); opacity: 0.8; }
+}
+
+/* HUD corners */
+.hud-corner {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(26, 58, 110, 0.4);
+}
+.hud-tl { top: 12px; left: 12px; border-right: none; border-bottom: none; }
+.hud-tr { top: 12px; right: 12px; border-left: none; border-bottom: none; }
+.hud-bl { bottom: 80px; left: 12px; border-right: none; border-top: none; }
+.hud-br { bottom: 80px; right: 12px; border-left: none; border-top: none; }
+
+.hud-reticle {
+  width: 60px;
+  height: 60px;
+  border: 1px solid rgba(26, 58, 110, 0.15);
+  border-radius: 50%;
+}
+.hud-reticle::before, .hud-reticle::after {
+  content: '';
+  position: absolute;
+  background: rgba(26, 58, 110, 0.2);
+}
+.hud-reticle::before { width: 1px; height: 100%; left: 50%; top: 0; }
+.hud-reticle::after { height: 1px; width: 100%; top: 50%; left: 0; }
+
+/* Arcane runes */
+.arcane-rune {
+  animation: runeFloat 8s ease-in-out infinite;
+}
+@keyframes runeFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); opacity: 0.15; }
+  50% { transform: translateY(-20px) rotate(10deg); opacity: 0.35; }
+}
+
+.arcane-sigil {
+  animation: sigilPulse 6s ease-in-out infinite;
+}
+@keyframes sigilPulse {
+  0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.08; }
+  50% { transform: translateX(-50%) scale(1.1); opacity: 0.15; }
+}
+
+/* Nav dock */
+.nav-dock .holo-card {
+  border-radius: 20px;
+  box-shadow: 0 -10px 40px rgba(0,0,0,0.4), 0 0 20px var(--accent-glow);
+}
+
+.nav-item-active {
+  opacity: 1 !important;
+  color: var(--text-primary);
+}
+
+.nav-glow-trail {
+  position: absolute;
+  inset: 2px;
+  border-radius: 10px;
+  background: var(--accent-glow);
+  box-shadow: 0 0 20px var(--accent-glow);
+  z-index: 0;
+}
+
+/* Boss battle */
+.boss-aura {
+  background: radial-gradient(ellipse at 80% 30%, var(--accent-glow), transparent 60%);
+  animation: bossAura 3s ease-in-out infinite;
+}
+@keyframes bossAura {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
+
+.boss-sprite {
+  filter: drop-shadow(0 0 20px var(--accent-glow));
+}
+
+.boss-health-shine {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: healthShine 2s ease-in-out infinite;
+}
+@keyframes healthShine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.floating-damage {
+  text-shadow: 0 0 10px #ff3333, 0 0 20px #ff0000;
+  pointer-events: none;
+}
+
+.screen-shake {
+  animation: screenShake 0.4s ease-out;
+}
+@keyframes screenShake {
+  0%, 100% { transform: translate(0); }
+  20% { transform: translate(-4px, 2px); }
+  40% { transform: translate(4px, -2px); }
+  60% { transform: translate(-2px, -4px); }
+  80% { transform: translate(2px, 4px); }
+}
+
+.champion-glow {
+  filter: drop-shadow(0 0 15px gold);
+}
+
+.mood-orb {
+  animation: moodPulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+@keyframes moodPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}
+
+/* Enhanced theme cards fallback */
+.theme-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+}
