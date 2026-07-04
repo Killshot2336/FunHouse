@@ -91,9 +91,9 @@ export function GameGuide({ state, onUpdate }: GameGuideProps) {
 
       {user?.username === 'aden' && (
         <div className="theme-card p-4 space-y-3 border border-red-500/30">
-          <h3 className="text-sm font-bold text-red-400">Demo Reset</h3>
+          <h3 className="text-sm font-bold text-red-400">Reset Game</h3>
           <p className="text-xs opacity-60">
-            Wipe all villages, troops, inventory, trades, XP, and world captures for Aden, Edward &amp; Jamie. Fresh start for demos.
+            Wipe all villages, troops, inventory, trades, XP, and world captures for Aden, Edward &amp; Jamie. Everyone starts fresh.
           </p>
           <button
             disabled={wiping}
@@ -101,17 +101,17 @@ export function GameGuide({ state, onUpdate }: GameGuideProps) {
               if (!confirm('Wipe ALL game data for everyone? This cannot be undone.')) return;
               setWiping(true);
               try {
-                await api('/game/wipe', { method: 'POST', body: JSON.stringify({}) }, token);
-                notify('Game wiped — everyone starts fresh!', 'success');
+                await api('/game/wipe', { method: 'POST', body: JSON.stringify({ full: true }) }, token);
+                notify('Game reset — everyone starts fresh!', 'success');
                 onUpdate?.();
               } catch (e) {
-                notify(e instanceof Error ? e.message : 'Wipe failed', 'error');
+                notify(e instanceof Error ? e.message : 'Reset failed', 'error');
               }
               setWiping(false);
             }}
             className="theme-btn w-full text-sm border border-red-500/50 text-red-400"
           >
-            {wiping ? 'Wiping...' : 'Wipe Game Data (All Players)'}
+            {wiping ? 'Resetting...' : 'Reset All Game Data'}
           </button>
         </div>
       )}

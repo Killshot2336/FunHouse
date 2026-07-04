@@ -23,12 +23,12 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
-      demoMode: true,
+      demoMode: false,
       hydrated: false,
-      setAuth: (user, token, demoMode = true) => set({ user, token, demoMode }),
+      setAuth: (user, token, demoMode = false) => set({ user, token, demoMode }),
       logout: () => set({ user: null, token: null }),
       resetDevice: () => {
-        set({ user: null, token: null, demoMode: true, hydrated: true });
+        set({ user: null, token: null, demoMode: false, hydrated: true });
         localStorage.removeItem('funhouse-auth');
         localStorage.removeItem('funhouse-install-dismissed');
       },

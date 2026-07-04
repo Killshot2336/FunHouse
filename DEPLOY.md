@@ -27,12 +27,21 @@ Click **Redeploy** after adding variables.
 
 ### Supabase migrations
 
-In Supabase → **SQL Editor**, run each file in order:
+In Supabase → **SQL Editor**, run each file in order (skip any that error because tables already exist):
 
-1. `supabase/migrations/001_initial_schema.sql`
+1. `supabase/migrations/001_initial_schema.sql` — skip if `profiles` already exists
 2. `supabase/migrations/002_rename_aden_and_swap_themes.sql`
 3. `supabase/migrations/003_commander_village.sql`
 4. `supabase/migrations/004_rival_faction.sql`
+5. `supabase/migrations/005_fix_cats_litter_seed.sql`
+6. `supabase/migrations/006_chore_rules.sql`
+7. `supabase/migrations/007_game_expansion.sql`
+8. `supabase/migrations/008_economy_dungeon.sql`
+9. `supabase/migrations/009_commander_equipment.sql`
+
+### Reset game data (fresh start)
+
+In Supabase SQL Editor, run `supabase/scripts/wipe_game_reset.sql` — or log in as **Aden** → Commander Village → **Info** → **Reset All Game Data**.
 
 ## Share the link
 

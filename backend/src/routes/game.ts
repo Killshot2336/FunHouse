@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase } from '../lib/supabase.js';
-import { getDemoStore, uuid, resetDemoStore } from '../lib/demoStore.js';
+import { getDemoStore, uuid } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 import {
   PATRON_BY_USER,
@@ -1293,8 +1293,9 @@ router.post('/wipe', async (req: Request, res: Response) => {
   const full = Boolean(req.body?.full);
 
   if (isDemoMode || !supabase) {
-    resetDemoStore();
-    return res.json({ wiped: true, mode: 'demo', full_household: full });
+    return res.status(503).json({
+      error: 'Game reset requires production database. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.',
+    });
   }
 
   try {
