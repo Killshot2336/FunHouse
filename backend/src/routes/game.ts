@@ -62,6 +62,7 @@ import {
   applyResourceDelta,
   deductResources,
   tradeDescription,
+  hasTradeContent,
 } from '../lib/tradeResources.js';
 
 const router = Router();
@@ -509,7 +510,10 @@ router.post('/trades', async (req: Request, res: Response) => {
     const fromCmd = getOrCreateCommander(store, user.username);
     const offerBundle = offer as TradeResources;
     const requestBundle = request as TradeResources;
-    if (!hasEnoughResources(fromCmd, offerBundle)) {
+    if (!hasTradeContent(offerBundle) && !hasTradeContent(requestBundle)) {
+      return res.status(400).json({ error: 'Trade must include something to offer or request' });
+    }
+    if (hasTradeContent(offerBundle) && !hasEnoughResources(fromCmd, offerBundle)) {
       return res.status(400).json({ error: 'Not enough resources to offer' });
     }
     const trade = {
@@ -540,7 +544,9 @@ router.post('/trades/:id/accept', async (req: Request, res: Response) => {
     const toCmd = getOrCreateCommander(store, trade.to_user);
 
     if (!hasEnoughResources(fromCmd, offer)) return res.status(400).json({ error: 'Offerer lacks resources' });
-    if (!hasEnoughResources(toCmd, request)) return res.status(400).json({ error: 'You lack requested resources' });
+    if (hasTradeContent(request) && !hasEnoughResources(toCmd, request)) {
+      return res.status(400).json({ error: 'You lack requested resources' });
+    }
 
     const finalFrom = applyResourceDelta(applyResourceDelta(fromCmd, offer, -1), request, 1);
     const finalTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);

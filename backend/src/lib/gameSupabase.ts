@@ -58,6 +58,7 @@ import {
   applyResourceDelta,
   deductResources,
   tradeDescription,
+  hasTradeContent,
 } from './tradeResources.js';
 
 export interface Commander {
@@ -616,8 +617,14 @@ export async function createTrade(
   offer: TradeResources,
   request: TradeResources
 ) {
+  if (!hasTradeContent(offer) && !hasTradeContent(request)) {
+    throw new Error('Trade must include something to offer or request');
+  }
+
   const fromCmd = await getOrCreateCommander(sb, fromUser);
-  if (!hasEnoughResources(fromCmd, offer)) throw new Error('Not enough resources to offer');
+  if (hasTradeContent(offer) && !hasEnoughResources(fromCmd, offer)) {
+    throw new Error('Not enough resources to offer');
+  }
 
   const { data: trade } = await sb
     .from('game_trades')
@@ -651,7 +658,9 @@ export async function acceptTrade(sb: SupabaseClient, userId: string, tradeId: s
   const toCmd = await getOrCreateCommander(sb, trade.to_user);
 
   if (!hasEnoughResources(fromCmd, offer)) throw new Error('Offerer lacks resources');
-  if (!hasEnoughResources(toCmd, request)) throw new Error('You lack requested resources');
+  if (hasTradeContent(request) && !hasEnoughResources(toCmd, request)) {
+    throw new Error('You lack requested resources');
+  }
 
   const newFrom = applyResourceDelta(applyResourceDelta(fromCmd, offer, -1), request, 1);
   const newTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
