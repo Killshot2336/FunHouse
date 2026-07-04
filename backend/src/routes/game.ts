@@ -146,7 +146,6 @@ router.get('/state', async (req: Request, res: Response) => {
 
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
-    applyOffline(store, user.username);
     const cmd = getOrCreateCommander(store, user.username);
     refreshPower(store, user.username);
     return res.json({

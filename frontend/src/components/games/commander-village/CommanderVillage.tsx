@@ -112,9 +112,12 @@ export function CommanderVillage() {
   useEffect(() => { fetchState(); }, [fetchState]);
 
   useEffect(() => {
-    const id = setInterval(() => fetchState(), 30000);
-    return () => clearInterval(id);
-  }, [fetchState]);
+    const collect = () => api('/game/collect', { method: 'POST' }, token).then(() => fetchState()).catch(() => {});
+    collect();
+    const collectId = setInterval(collect, 60000);
+    const stateId = setInterval(() => fetchState(), 30000);
+    return () => { clearInterval(collectId); clearInterval(stateId); };
+  }, [token, fetchState]);
 
   const refresh = () => fetchState();
 
@@ -137,6 +140,7 @@ export function CommanderVillage() {
   const stockpile = state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 };
   const cropTotal = Object.values(stockpile.crops).reduce((a, b) => a + b, 0);
   const oreTotal = Object.values(stockpile.ores).reduce((a, b) => a + b, 0);
+  const totalFood = state.commander.food + cropTotal;
 
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: 'village', label: 'Village', icon: '🏘️' },
@@ -165,10 +169,9 @@ export function CommanderVillage() {
         <div className="flex flex-wrap gap-2 text-xs">
           <span>🪙 {state.commander.gold}</span>
           <span>⛏️ {state.commander.materials}</span>
-          <span>🌾 {state.commander.food}</span>
+          <span>🌾 {totalFood}</span>
+          <span>💎 {oreTotal}</span>
           <span>⭐ {state.commander.faction_currency}</span>
-          {cropTotal > 0 && <span>🌽 {cropTotal}</span>}
-          {oreTotal > 0 && <span>💎 {oreTotal}</span>}
           {(state.commander.pickaxe_tier || 1) > 1 && <span>⛏️T{state.commander.pickaxe_tier}</span>}
         </div>
       </div>

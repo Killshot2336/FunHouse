@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuthStore } from '../../../stores';
 import { api } from '../../../lib/api';
 import { CROP_TYPES, ORE_TYPES } from './gameConfig';
+import { useCountdown, nextHourIso } from './useCountdown';
 import type { GameState } from './CommanderVillage';
 
 interface MarketHubProps {
@@ -39,17 +40,15 @@ export function MarketHub({ state, onUpdate }: MarketHubProps) {
     }
   };
 
-  const timeLeft = market?.market_resets_at
-    ? Math.max(0, new Date(market.market_resets_at).getTime() - Date.now())
-    : 0;
-  const minsLeft = Math.floor(timeLeft / 60000);
+  const resetTarget = market?.market_resets_at || nextHourIso();
+  const { label: countdownLabel } = useCountdown(resetTarget);
 
   return (
     <div className="space-y-4">
       <div className="theme-card p-4">
         <h3 className="text-sm font-bold mb-1">Hourly Market</h3>
         <p className="text-xs opacity-60">
-          Prices reset in {minsLeft}m · Hot crop: {market?.hot_crop || '—'} 🔥
+          Prices reset in {countdownLabel} · Hot crop: {market?.hot_crop || '—'} 🔥
         </p>
       </div>
 

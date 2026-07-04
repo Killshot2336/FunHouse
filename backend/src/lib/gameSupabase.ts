@@ -215,7 +215,7 @@ function buildMarketConfig() {
 }
 
 export async function getGameState(sb: SupabaseClient, userId: string) {
-  const commander = await applyOffline(sb, userId);
+  const commander = await getOrCreateCommander(sb, userId);
   await refreshPower(sb, userId);
 
   const { data: refreshed } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();

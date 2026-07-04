@@ -30,13 +30,16 @@ export function VillageMap({ state, onUpdate }: VillageMapProps) {
     return () => clearInterval(id);
   }, []);
 
-  const hoursSince = (tick - new Date(state.commander.last_seen_at).getTime()) / 3600000;
+  const hoursSince = Math.min(
+    8,
+    Math.max(0, (tick - new Date(state.commander.last_seen_at).getTime()) / 3600000),
+  );
 
   const accruedById = useMemo(() => {
     const map = new Map<string, { liveAmount: number; ratePerHour: number; resource: string }>();
     for (const b of state.building_accrued || []) {
       map.set(b.id, {
-        liveAmount: b.amount + b.ratePerHour * hoursSince,
+        liveAmount: b.ratePerHour * hoursSince,
         ratePerHour: b.ratePerHour,
         resource: b.resource,
       });

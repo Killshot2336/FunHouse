@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
+import { useCountdown, nextDungeonResetIso } from './useCountdown';
 import type { GameState } from './CommanderVillage';
 
 interface DungeonState {
@@ -34,6 +35,9 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
 
   useEffect(() => { fetchDungeon(); }, [token, state]);
 
+  const resetTarget = dungeon?.resets_at || nextDungeonResetIso();
+  const { label: countdownLabel } = useCountdown(resetTarget);
+
   const enter = async () => {
     await api('/game/dungeon/enter', { method: 'POST' }, token);
     fetchDungeon();
@@ -54,8 +58,6 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
 
   if (!dungeon) return <div className="text-center p-4 opacity-60 text-sm">Loading dungeon...</div>;
 
-  const timeLeft = Math.max(0, new Date(dungeon.resets_at).getTime() - Date.now());
-  const minsLeft = Math.floor(timeLeft / 60000);
   const run = dungeon.run;
   const progress = run ? (run.room_index / dungeon.room_count) * 100 : 0;
 
@@ -63,7 +65,7 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
     <div className="space-y-4">
       <div className="theme-card p-4">
         <h3 className="text-sm font-bold">30-Minute Dungeon</h3>
-        <p className="text-xs opacity-60">Resets in {minsLeft}m · Seed #{dungeon.seed}</p>
+        <p className="text-xs opacity-60">Resets in {countdownLabel} · Seed #{dungeon.seed}</p>
         <div className="mt-2 h-2 bg-black/30 rounded overflow-hidden">
           <div className="h-full bg-current transition-all" style={{ width: `${progress}%`, opacity: 0.6 }} />
         </div>
