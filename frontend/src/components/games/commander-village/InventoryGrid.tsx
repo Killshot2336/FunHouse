@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useAuthStore } from '../../../stores';
-import { api, getRarityClass } from '../../../lib/api';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, getRarityClass, playSound } from '../../../lib/api';
+import { useCinematicStore } from '../../../stores/cinematic';
 import { RARITY_COLORS, itemSellPrice } from './gameConfig';
 import { ItemInfoModal } from './ItemInfoModal';
 import type { GameState } from './CommanderVillage';
@@ -11,31 +12,69 @@ interface InventoryGridProps {
   onUpdate: () => void;
 }
 
+interface EquipResult {
+  item: { name: string };
+  unit: { unit_key: string };
+  bonus?: string;
+  unit_name?: string;
+}
+
+function formatBonus(itemStats: Record<string, number>): string {
+  const labels: Record<string, string> = { atk: 'ATK', def: 'DEF', spd: 'SPD', luck: 'LUCK' };
+  return Object.entries(itemStats)
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `+${v} ${labels[k] || k.toUpperCase()}`)
+    .join(', ');
+}
+
 export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
+  const { triggerFlash } = useCinematicStore();
   const [infoItem, setInfoItem] = useState<LootItemDef | null>(null);
+  const [equipTarget, setEquipTarget] = useState<{ itemId: string; itemName: string; stats: Record<string, number> } | null>(null);
+  const [equipping, setEquipping] = useState(false);
   const items = (state.config.items || []) as LootItemDef[];
+
+  const unitName = (unitKey: string) =>
+    state.config.units.find((u) => u.key === unitKey)?.name || unitKey;
 
   const sell = async (id: string) => {
     await api(`/game/inventory/${id}/sell`, { method: 'POST' }, token);
+    notify('Item sold for gold', 'success');
     onUpdate();
   };
 
   const sellAll = async () => {
+    let count = 0;
     for (const item of state.inventory) {
       if (!item.equipped_to_unit) {
         await api(`/game/inventory/${item.id}/sell`, { method: 'POST' }, token);
+        count++;
       }
     }
+    notify(`Sold ${count} item(s)`, 'success');
     onUpdate();
   };
 
-  const equip = async (itemId: string, unitId: string) => {
-    await api(`/game/inventory/${itemId}/equip`, {
-      method: 'POST',
-      body: JSON.stringify({ unit_id: unitId, slot: 'weapon' }),
-    }, token);
-    onUpdate();
+  const equip = async (itemId: string, unitId: string, itemName: string, itemStats: Record<string, number>) => {
+    setEquipping(true);
+    try {
+      const res = await api<EquipResult>(`/game/inventory/${itemId}/equip`, {
+        method: 'POST',
+        body: JSON.stringify({ unit_id: unitId, slot: 'weapon' }),
+      }, token);
+      const troop = res.unit_name || unitName(res.unit.unit_key);
+      const bonus = res.bonus || formatBonus(itemStats);
+      notify(`Equipped ${itemName} on ${troop} (${bonus})`, 'success');
+      triggerFlash('success');
+      playSound(user!.theme, 'craft');
+      setEquipTarget(null);
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Equip failed', 'error');
+    }
+    setEquipping(false);
   };
 
   const getItemDef = (itemId: string) => items.find((i) => i.id === itemId);
@@ -53,10 +92,15 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
         {state.inventory.map((item) => {
           const def = getItemDef(item.item_id);
           const sellPrice = itemSellPrice(item.item_id, item.rarity, items);
+          const equippedUnit = item.equipped_to_unit
+            ? state.units.find((u) => u.id === item.equipped_to_unit)
+            : null;
+          const equippedName = equippedUnit ? unitName(equippedUnit.unit_key) : null;
+
           return (
             <div
               key={item.id}
-              className={`theme-card p-3 ${getRarityClass(item.rarity)}`}
+              className={`theme-card p-3 ${getRarityClass(item.rarity)} ${item.equipped_to_unit ? 'opacity-80' : ''}`}
               style={{ borderColor: RARITY_COLORS[item.rarity as keyof typeof RARITY_COLORS] }}
             >
               <div className="flex justify-between items-start">
@@ -68,6 +112,9 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
               <div className="text-xs uppercase mb-1" style={{ color: RARITY_COLORS[item.rarity as keyof typeof RARITY_COLORS] }}>
                 {item.rarity}
               </div>
+              {equippedName && (
+                <div className="text-[10px] text-green-400 mb-1">✓ Equipped on {equippedName}</div>
+              )}
               {def?.description && (
                 <p className="text-[10px] opacity-50 mb-1 line-clamp-2">{def.description}</p>
               )}
@@ -76,17 +123,51 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
               ))}
               <div className="text-xs opacity-50 mt-1">Sell: {sellPrice}🪙</div>
               <div className="flex gap-1 mt-2">
-                {!item.equipped_to_unit && state.units[0] && (
-                  <button onClick={() => equip(item.id, state.units[0].id)} className="theme-btn text-xs flex-1">
+                {!item.equipped_to_unit && state.units.length > 0 && (
+                  <button
+                    onClick={() => setEquipTarget({ itemId: item.id, itemName: item.name, stats: item.stats })}
+                    className="theme-btn text-xs flex-1"
+                  >
                     Equip
                   </button>
                 )}
-                <button onClick={() => sell(item.id)} className="theme-btn text-xs flex-1">Sell</button>
+                {!item.equipped_to_unit && (
+                  <button onClick={() => sell(item.id)} className="theme-btn text-xs flex-1">Sell</button>
+                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {equipTarget && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setEquipTarget(null)}>
+          <div className="holo-card holo-card-intense p-4 max-w-sm w-full space-y-3" style={{ background: 'var(--card-bg)' }} onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-sm">Equip {equipTarget.itemName}</h3>
+            {formatBonus(equipTarget.stats) && (
+              <p className="text-xs opacity-70">Grants: {formatBonus(equipTarget.stats)}</p>
+            )}
+            <p className="text-xs opacity-50">Choose a troop:</p>
+            <div className="space-y-2">
+              {state.units.map((u) => {
+                const def = state.config.units.find((x) => x.key === u.unit_key);
+                return (
+                  <button
+                    key={u.id}
+                    disabled={equipping}
+                    onClick={() => equip(equipTarget.itemId, u.id, equipTarget.itemName, equipTarget.stats)}
+                    className="theme-btn w-full text-sm py-2 flex items-center justify-center gap-2"
+                  >
+                    {def?.icon} {def?.name || u.unit_key}
+                  </button>
+                );
+              })}
+            </div>
+            <button onClick={() => setEquipTarget(null)} className="theme-btn w-full text-xs opacity-60">Cancel</button>
+          </div>
+        </div>
+      )}
+
       {infoItem && <ItemInfoModal item={infoItem} onClose={() => setInfoItem(null)} />}
     </div>
   );

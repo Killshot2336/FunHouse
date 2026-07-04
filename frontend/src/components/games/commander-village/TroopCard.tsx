@@ -7,11 +7,12 @@ interface TroopCardProps {
   icon: string;
   rarity?: Rarity;
   stats: Record<string, unknown>;
+  equipmentLabel?: string;
   selected?: boolean;
   onClick?: () => void;
 }
 
-export function TroopCard({ name, icon, rarity = 'common', stats, selected, onClick }: TroopCardProps) {
+export function TroopCard({ name, icon, rarity = 'common', stats, equipmentLabel, selected, onClick }: TroopCardProps) {
   const combat = normalizeCombatStats(stats);
   const color = RARITY_COLORS[rarity];
 
@@ -25,6 +26,9 @@ export function TroopCard({ name, icon, rarity = 'common', stats, selected, onCl
           </span>
         </div>
         <div className="font-bold text-sm">{name}</div>
+        {equipmentLabel && (
+          <div className="text-[10px] opacity-60">🗡️ {equipmentLabel}</div>
+        )}
         <div className="space-y-1 text-xs">
           <StatBar label="HP" value={combat.health} max={200} color="#22c55e" />
           <StatBar label="DMG" value={combat.damage} max={80} color="#ef4444" />

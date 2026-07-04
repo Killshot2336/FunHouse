@@ -259,3 +259,34 @@ export function rollPackUnit(patron: Patron, pity: PityState): {
 }
 
 export { calcPowerRating, normalizeCombatStats };
+
+export function applyItemStatsToUnit(
+  unitStats: Record<string, unknown>,
+  itemStats: Record<string, number>
+): Record<string, unknown> {
+  const out = { ...unitStats };
+  for (const [k, v] of Object.entries(itemStats)) {
+    if (k === 'atk') {
+      out.atk = Number(out.atk ?? out.damage ?? 5) + v;
+      out.damage = Number(out.damage ?? out.atk ?? 5) + v;
+    } else if (k === 'def') {
+      out.def = Number(out.def ?? 3) + v;
+      const shieldBonus = Math.floor(v / 2) + 2;
+      out.shield = Number(out.shield ?? 8) + shieldBonus;
+      out.health = Number(out.health ?? Number(out.def) * 10) + v * 5;
+    } else {
+      out[k] = Number(out[k] ?? 0) + v;
+    }
+  }
+  return out;
+}
+
+export function formatItemStatBonus(itemStats: Record<string, number>): string {
+  const labels: Record<string, string> = {
+    atk: 'ATK', def: 'DEF', spd: 'SPD', luck: 'LUCK',
+  };
+  const parts = Object.entries(itemStats)
+    .filter(([, v]) => v > 0)
+    .map(([k, v]) => `+${v} ${labels[k] || k.toUpperCase()}`);
+  return parts.join(', ') || 'equipped';
+}

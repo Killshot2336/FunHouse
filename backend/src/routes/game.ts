@@ -37,6 +37,8 @@ import {
   rollLoot,
   rollPackUnit,
   defaultUnitStats,
+  applyItemStatsToUnit,
+  formatItemStatBonus,
 } from '../lib/gameEngine.js';
 import {
   itemSellPrice,
@@ -428,13 +430,15 @@ router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
 
     item.equipped_to_unit = unit_id;
     unit.equipment[slot] = item.id;
-    const ustats = unit.stats as Record<string, number>;
-    for (const [k, v] of Object.entries(item.stats)) {
-      if (k in ustats) ustats[k] = Number(ustats[k] ?? 0) + v;
-    }
-    unit.stats = ustats;
+    unit.stats = applyItemStatsToUnit(unit.stats as Record<string, unknown>, item.stats);
     refreshPower(store, user.username);
-    return res.json({ item, unit });
+    const unitDef = UNITS_BY_PATRON[(getOrCreateCommander(store, user.username).patron) as Patron]?.find((u) => u.key === unit.unit_key);
+    return res.json({
+      item,
+      unit,
+      bonus: formatItemStatBonus(item.stats),
+      unit_name: unitDef?.name || unit.unit_key,
+    });
   }
 
   try {

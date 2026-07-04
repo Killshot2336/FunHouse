@@ -33,6 +33,8 @@ import {
   rollLoot,
   rollPackUnit,
   defaultUnitStats,
+  applyItemStatsToUnit,
+  formatItemStatBonus,
   type BuildingState,
 } from './gameEngine.js';
 import {
@@ -567,9 +569,7 @@ export async function equipItem(
   const unit = mapUnit(unitRow);
   const item = mapInventory(itemRow);
 
-  for (const [k, v] of Object.entries(item.stats)) {
-    if (k in unit.stats) unit.stats[k as keyof typeof unit.stats] += v;
-  }
+  unit.stats = applyItemStatsToUnit(unit.stats as Record<string, unknown>, item.stats) as Unit['stats'];
   unit.equipment[slot] = itemId;
 
   await sb.from('game_inventory').update({ equipped_to_unit: unit_id }).eq('id', itemId);
@@ -579,7 +579,13 @@ export async function equipItem(
   }).eq('id', unit_id);
 
   await refreshPower(sb, userId);
-  return { item: { ...item, equipped_to_unit: unit_id }, unit };
+  const unitDef = UNITS_BY_PATRON[(await getOrCreateCommander(sb, userId)).patron as Patron]?.find((u) => u.key === unit.unit_key);
+  return {
+    item: { ...item, equipped_to_unit: unit_id },
+    unit,
+    bonus: formatItemStatBonus(item.stats),
+    unit_name: unitDef?.name || unit.unit_key,
+  };
 }
 
 export async function sellItem(sb: SupabaseClient, userId: string, itemId: string) {

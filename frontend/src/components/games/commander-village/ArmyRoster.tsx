@@ -12,6 +12,13 @@ interface ArmyRosterProps {
   onUpdate: () => void;
 }
 
+function getEquippedLabel(unit: GameState['units'][0], inventory: GameState['inventory']): string | undefined {
+  const weaponId = unit.equipment?.weapon;
+  if (!weaponId) return undefined;
+  const item = inventory.find((i) => i.id === weaponId);
+  return item?.name;
+}
+
 export function ArmyRoster({ state, onUpdate }: ArmyRosterProps) {
   const { user, token } = useAuthStore();
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
@@ -63,6 +70,7 @@ export function ArmyRoster({ state, onUpdate }: ArmyRosterProps) {
                 icon={def?.icon || '👤'}
                 rarity={rarity}
                 stats={unit.stats as Record<string, unknown>}
+                equipmentLabel={getEquippedLabel(unit, state.inventory)}
                 selected={selectedUnit === unit.id}
                 onClick={() => setSelectedUnit(unit.id)}
               />
