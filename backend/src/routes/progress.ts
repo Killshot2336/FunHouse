@@ -57,10 +57,20 @@ router.post('/spend', async (req: Request, res: Response) => {
   const skill = COMMANDER_SKILLS.find((s) => s.key === skill_key);
   if (!skill) return res.status(400).json({ error: 'Invalid skill' });
 
+  const checkPrereq = (spent: string[]) => {
+    if (skill.node > 1) {
+      const prev = COMMANDER_SKILLS.find((s) => s.branch === skill.branch && s.node === skill.node - 1);
+      if (prev && !spent.includes(prev.key)) return 'Unlock previous node first';
+    }
+    return null;
+  };
+
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
     const p = getOrCreateProgress(store, user.username);
     const spent = p.sp_spent_json || [];
+    const prereqErr = checkPrereq(spent);
+    if (prereqErr) return res.status(400).json({ error: prereqErr });
     if (spent.includes(skill_key)) return res.status(400).json({ error: 'Already unlocked' });
     if (p.sp_unspent < skill.cost) return res.status(400).json({ error: 'Not enough SP' });
     p.sp_unspent -= skill.cost;
@@ -71,6 +81,8 @@ router.post('/spend', async (req: Request, res: Response) => {
   const { data: p } = await supabase.from('profile_progress').select('*').eq('user_id', user.username).single();
   if (!p) return res.status(400).json({ error: 'No progress' });
   const spent = (p.sp_spent_json as string[]) || [];
+  const prereqErr = checkPrereq(spent);
+  if (prereqErr) return res.status(400).json({ error: prereqErr });
   if (spent.includes(skill_key)) return res.status(400).json({ error: 'Already unlocked' });
   if (p.sp_unspent < skill.cost) return res.status(400).json({ error: 'Not enough SP' });
   await supabase.from('profile_progress').update({

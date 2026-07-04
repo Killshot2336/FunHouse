@@ -4,6 +4,7 @@ import { useAuthStore } from '../../../stores';
 import { api } from '../../../lib/api';
 import { BUILDINGS, BUILDING_COSTS, buildingCost, getUnlockedCrops, CROP_TYPES } from './gameConfig';
 import { BuildingUpgrades } from './BuildingUpgrades';
+import { formatMinSec } from './productionFormat';
 import type { GameState } from './CommanderVillage';
 
 const RESOURCE_ICONS: Record<string, string> = {
@@ -21,14 +22,15 @@ interface BuildingPanelProps {
   x: number;
   y: number;
   liveAmount: number;
-  ratePerHour: number;
+  ratePerMin: number;
+  elapsedSec: number;
   onUpgrade: () => void;
   onClose: () => void;
   upgrading: boolean;
 }
 
 export function BuildingPanel({
-  state, x, y, liveAmount, ratePerHour, onUpgrade, onClose, upgrading,
+  state, x, y, liveAmount, ratePerMin, elapsedSec, onUpgrade, onClose, upgrading,
 }: BuildingPanelProps) {
   const { token } = useAuthStore();
   const [collecting, setCollecting] = useState(false);
@@ -104,7 +106,7 @@ export function BuildingPanel({
         <div className="text-lg font-bold glow-text">
           +{liveAmount.toFixed(1)} {resourceIcon}
         </div>
-        <div className="text-xs opacity-50">{ratePerHour.toFixed(1)}/hr</div>
+        <div className="text-xs opacity-50">+{ratePerMin.toFixed(2)}/min · building for {formatMinSec(elapsedSec)}</div>
         {isCropBuilding && meta.crop && (
           <div className="text-xs mt-1 opacity-60">
             Growing: {CROP_TYPES.find((c) => c.key === meta.crop)?.icon} {meta.crop}

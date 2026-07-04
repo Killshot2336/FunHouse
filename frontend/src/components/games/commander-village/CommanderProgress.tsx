@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../../../stores';
 import { api } from '../../../lib/api';
 import { COMMANDER_SKILLS } from './gameConfig';
+import { CommanderSkillTree } from './CommanderSkillTree';
 
 interface Progress {
   level: number;
@@ -27,15 +28,11 @@ export function CommanderProgress() {
 
   useEffect(() => { fetch(); }, [token]);
 
-  const spendSp = async (skillKey: string) => {
-    await api('/progress/spend', { method: 'POST', body: JSON.stringify({ skill_key: skillKey }) }, token);
-    fetch();
-  };
-
   if (!progress) return <div className="text-xs opacity-50">Loading progress...</div>;
 
   const pct = Math.min(100, (progress.xp_progress / progress.xp_needed) * 100);
   const spent = progress.sp_spent_json || [];
+  const skills = progress.skills?.length ? progress.skills : COMMANDER_SKILLS;
 
   return (
     <div className="space-y-4">
@@ -52,31 +49,15 @@ export function CommanderProgress() {
             transition={{ duration: 0.8 }}
           />
         </div>
-        <p className="text-xs opacity-50 mt-2">SP available: {progress.sp_unspent}</p>
+        <p className="text-xs opacity-50 mt-2">Skill points available: {progress.sp_unspent}</p>
       </div>
 
-      <div>
-        <h3 className="text-sm font-bold mb-2">Commander Skill Tree</h3>
-        <div className="space-y-2">
-          {COMMANDER_SKILLS.map((skill) => {
-            const unlocked = spent.includes(skill.key);
-            return (
-              <button
-                key={skill.key}
-                disabled={unlocked || progress.sp_unspent < skill.cost}
-                onClick={() => spendSp(skill.key)}
-                className={`theme-card w-full p-3 text-left ${unlocked ? 'opacity-60' : ''}`}
-              >
-                <div className="flex justify-between">
-                  <span className="font-bold text-sm">{skill.name}</span>
-                  <span className="text-xs">{unlocked ? '✓' : `${skill.cost} SP`}</span>
-                </div>
-                <p className="text-xs opacity-50">{skill.desc}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      <CommanderSkillTree
+        skills={skills}
+        spent={spent}
+        spUnspent={progress.sp_unspent}
+        onSpend={fetch}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { api, getRarityClass, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
 import { RARITY_COLORS, itemSellPrice } from './gameConfig';
 import { ItemInfoModal } from './ItemInfoModal';
+import { GameModal } from './GameModal';
 import type { GameState } from './CommanderVillage';
 import type { LootItemDef } from './gameConfig';
 
@@ -32,7 +33,7 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
   const notify = useNotificationStore((s) => s.show);
   const { triggerFlash } = useCinematicStore();
   const [infoItem, setInfoItem] = useState<LootItemDef | null>(null);
-  const [equipTarget, setEquipTarget] = useState<{ itemId: string; itemName: string; stats: Record<string, number> } | null>(null);
+  const [equipTarget, setEquipTarget] = useState<{ itemId: string; itemName: string; stats: Record<string, number>; rarity: string } | null>(null);
   const [equipping, setEquipping] = useState(false);
   const items = (state.config.items || []) as LootItemDef[];
 
@@ -57,7 +58,7 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
     onUpdate();
   };
 
-  const equip = async (itemId: string, unitId: string, itemName: string, itemStats: Record<string, number>) => {
+  const equip = async (itemId: string, unitId: string, itemName: string, itemStats: Record<string, number>, rarity: string) => {
     setEquipping(true);
     try {
       const res = await api<EquipResult>(`/game/inventory/${itemId}/equip`, {
@@ -66,10 +67,10 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
       }, token);
       const troop = res.unit_name || unitName(res.unit.unit_key);
       const bonus = res.bonus || formatBonus(itemStats);
-      notify(`Equipped ${itemName} on ${troop} (${bonus})`, 'success');
-      triggerFlash('success');
-      playSound(user!.theme, 'craft');
       setEquipTarget(null);
+      notify(`Equipped ${itemName} on ${troop} (${bonus})`, 'success');
+      triggerFlash(rarity === 'mythic' || rarity === 'legendary' ? 'legendary' : 'success');
+      playSound(user!.theme, rarity === 'mythic' || rarity === 'legendary' ? 'legendary' : 'craft');
       onUpdate();
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Equip failed', 'error');
@@ -125,7 +126,7 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
               <div className="flex gap-1 mt-2">
                 {!item.equipped_to_unit && state.units.length > 0 && (
                   <button
-                    onClick={() => setEquipTarget({ itemId: item.id, itemName: item.name, stats: item.stats })}
+                    onClick={() => setEquipTarget({ itemId: item.id, itemName: item.name, stats: item.stats, rarity: item.rarity })}
                     className="theme-btn text-xs flex-1"
                   >
                     Equip
@@ -141,31 +142,28 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
       </div>
 
       {equipTarget && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setEquipTarget(null)}>
-          <div className="holo-card holo-card-intense p-4 max-w-sm w-full space-y-3" style={{ background: 'var(--card-bg)' }} onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-bold text-sm">Equip {equipTarget.itemName}</h3>
-            {formatBonus(equipTarget.stats) && (
-              <p className="text-xs opacity-70">Grants: {formatBonus(equipTarget.stats)}</p>
-            )}
-            <p className="text-xs opacity-50">Choose a troop:</p>
-            <div className="space-y-2">
-              {state.units.map((u) => {
-                const def = state.config.units.find((x) => x.key === u.unit_key);
-                return (
-                  <button
-                    key={u.id}
-                    disabled={equipping}
-                    onClick={() => equip(equipTarget.itemId, u.id, equipTarget.itemName, equipTarget.stats)}
-                    className="theme-btn w-full text-sm py-2 flex items-center justify-center gap-2"
-                  >
-                    {def?.icon} {def?.name || u.unit_key}
-                  </button>
-                );
-              })}
-            </div>
-            <button onClick={() => setEquipTarget(null)} className="theme-btn w-full text-xs opacity-60">Cancel</button>
+        <GameModal title={`Equip ${equipTarget.itemName}`} onClose={() => setEquipTarget(null)}>
+          {formatBonus(equipTarget.stats) && (
+            <p className="text-xs opacity-70">Grants: {formatBonus(equipTarget.stats)}</p>
+          )}
+          <p className="text-xs opacity-50">Choose a troop:</p>
+          <div className="space-y-2">
+            {state.units.map((u) => {
+              const def = state.config.units.find((x) => x.key === u.unit_key);
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  disabled={equipping}
+                  onClick={() => equip(equipTarget.itemId, u.id, equipTarget.itemName, equipTarget.stats, equipTarget.rarity)}
+                  className="theme-btn w-full text-sm py-2 flex items-center justify-center gap-2"
+                >
+                  {def?.icon} {def?.name || u.unit_key}
+                </button>
+              );
+            })}
           </div>
-        </div>
+        </GameModal>
       )}
 
       {infoItem && <ItemInfoModal item={infoItem} onClose={() => setInfoItem(null)} />}

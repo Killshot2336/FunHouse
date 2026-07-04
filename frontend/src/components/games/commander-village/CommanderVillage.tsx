@@ -111,12 +111,14 @@ export function CommanderVillage() {
 
   useEffect(() => { fetchState(); }, [fetchState]);
 
+  // Collect once on open — no interval (interval was resetting building timers every 60s)
   useEffect(() => {
-    const collect = () => api('/game/collect', { method: 'POST' }, token).then(() => fetchState()).catch(() => {});
-    collect();
-    const collectId = setInterval(collect, 60000);
-    const stateId = setInterval(() => fetchState(), 30000);
-    return () => { clearInterval(collectId); clearInterval(stateId); };
+    api('/game/collect', { method: 'POST' }, token).then(() => fetchState()).catch(() => {});
+  }, [token, fetchState]);
+
+  useEffect(() => {
+    const stateId = setInterval(() => fetchState(), 60000);
+    return () => clearInterval(stateId);
   }, [token, fetchState]);
 
   const refresh = () => fetchState();

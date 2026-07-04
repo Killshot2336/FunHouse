@@ -314,13 +314,26 @@ export function defaultCombatStats(rarity: Rarity = 'common'): { health: number;
   };
 }
 
+export const COMMANDER_SKILL_BRANCHES = ['economy', 'army', 'world'] as const;
+export type CommanderSkillBranch = typeof COMMANDER_SKILL_BRANCHES[number];
+
 export const COMMANDER_SKILLS = [
-  { key: 'farm_boost', name: '+5% Farm Yield', cost: 1, desc: 'Farms produce more food' },
-  { key: 'mine_boost', name: '+5% Mine Yield', cost: 1, desc: 'Mines produce more materials' },
-  { key: 'duel_luck', name: '+10% Duel Luck', cost: 1, desc: 'Better odds in duels' },
-  { key: 'pack_pity', name: '+1 Pack Pity', cost: 2, desc: 'Faster rare pulls' },
-  { key: 'grid_discount', name: 'Grid Expand -10%', cost: 2, desc: 'Cheaper territory expansion' },
-] as const;
+  { key: 'farm_boost', branch: 'economy' as const, node: 1, name: 'Farm Yield', cost: 1, desc: '+5% farm & crop output' },
+  { key: 'mine_boost', branch: 'economy' as const, node: 2, name: 'Mine Yield', cost: 1, desc: '+5% mine & ore rolls' },
+  { key: 'market_bonus', branch: 'economy' as const, node: 3, name: 'Market Bonus', cost: 2, desc: '+8% sell prices' },
+  { key: 'crop_speed', branch: 'economy' as const, node: 4, name: 'Fast Crops', cost: 2, desc: '+10% crop production speed' },
+  { key: 'trade_master', branch: 'economy' as const, node: 5, name: 'Trade Master', cost: 3, desc: '+15% trade & gift value' },
+  { key: 'recruit_cheap', branch: 'army' as const, node: 1, name: 'Recruitment', cost: 1, desc: '-10% troop recruit cost' },
+  { key: 'troop_stats', branch: 'army' as const, node: 2, name: 'Training', cost: 1, desc: '+3% all troop stats' },
+  { key: 'pack_pity', branch: 'army' as const, node: 3, name: 'Pack Pity', cost: 2, desc: 'Faster rare pack pulls' },
+  { key: 'duel_luck', branch: 'army' as const, node: 4, name: 'Duel Luck', cost: 2, desc: '+10% duel win odds' },
+  { key: 'army_cap', branch: 'army' as const, node: 5, name: 'Elite Army', cost: 3, desc: '+1 max army slot' },
+  { key: 'grid_discount', branch: 'world' as const, node: 1, name: 'Land Survey', cost: 1, desc: '-10% grid expand cost' },
+  { key: 'zone_yield', branch: 'world' as const, node: 2, name: 'Zone Harvest', cost: 1, desc: '+10% zone capture yield' },
+  { key: 'patrol_boost', branch: 'world' as const, node: 3, name: 'Patrol Veteran', cost: 2, desc: '+1 patrol loot roll' },
+  { key: 'dungeon_boost', branch: 'world' as const, node: 4, name: 'Dungeon Delver', cost: 2, desc: '+10% dungeon loot' },
+  { key: 'scout_range', branch: 'world' as const, node: 5, name: 'Scout Network', cost: 3, desc: 'See zone enemy power hints' },
+];
 
 export const ZONE_TYPES: Record<string, { name: string; icon: string; yield: Record<string, number> }> = {
   farm: { name: 'Farmland', icon: '🌾', yield: { food: 15 } },

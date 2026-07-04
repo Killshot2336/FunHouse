@@ -3,6 +3,7 @@ import { useAuthStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { BUILDINGS, BUILDING_COSTS, buildingCost } from './gameConfig';
 import { BuildingPanel } from './BuildingPanel';
+import { liveProduction, ratePerMinute, secondsSince } from './productionFormat';
 import type { GameState } from './CommanderVillage';
 
 const RESOURCE_ICONS: Record<string, string> = {
@@ -30,22 +31,20 @@ export function VillageMap({ state, onUpdate }: VillageMapProps) {
     return () => clearInterval(id);
   }, []);
 
-  const hoursSince = Math.min(
-    8,
-    Math.max(0, (tick - new Date(state.commander.last_seen_at).getTime()) / 3600000),
-  );
+  const elapsedSec = secondsSince(state.commander.last_seen_at, tick);
 
   const accruedById = useMemo(() => {
-    const map = new Map<string, { liveAmount: number; ratePerHour: number; resource: string }>();
+    const map = new Map<string, { liveAmount: number; ratePerMin: number; resource: string; elapsedSec: number }>();
     for (const b of state.building_accrued || []) {
       map.set(b.id, {
-        liveAmount: b.ratePerHour * hoursSince,
-        ratePerHour: b.ratePerHour,
+        liveAmount: liveProduction(b.ratePerHour, elapsedSec),
+        ratePerMin: ratePerMinute(b.ratePerHour),
         resource: b.resource,
+        elapsedSec,
       });
     }
     return map;
-  }, [state.building_accrued, hoursSince]);
+  }, [state.building_accrued, elapsedSec]);
 
   const getBuildingAt = (x: number, y: number) =>
     state.buildings.find((b) => b.grid_x === x && b.grid_y === y);
@@ -144,7 +143,8 @@ export function VillageMap({ state, onUpdate }: VillageMapProps) {
               x={selectedTile.x}
               y={selectedTile.y}
               liveAmount={selectedAccrued?.liveAmount || 0}
-              ratePerHour={selectedAccrued?.ratePerHour || 0}
+              ratePerMin={selectedAccrued?.ratePerMin || 0}
+              elapsedSec={selectedAccrued?.elapsedSec || 0}
               upgrading={placing}
               onClose={() => setSelectedTile(null)}
               onUpgrade={() => placeOrUpgrade(selectedTile.x, selectedTile.y)}
