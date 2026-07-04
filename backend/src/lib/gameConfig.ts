@@ -407,12 +407,12 @@ export const GAME_GUIDE = [
   {
     key: 'mining',
     title: 'Mining & Ores',
-    content: 'Upgrade your pickaxe at the Smithy (no ore prerequisites). Tap Collect on a Mine to roll ores based on pickaxe tier. Higher tiers unlock rarer ores like Crystal and Mythril.',
+    content: 'Upgrade your pickaxe at the Smithy (slot 1). Mines auto-collect ores about every minute — no button needed. Higher pickaxe tiers unlock rarer ores like Crystal and Mythril.',
   },
   {
     key: 'army',
     title: 'Army & Packs',
-    content: 'Recruit up to 6 troops. Upgrade stats and skill trees on each TroopCard. Open packs for rare units. Rarity colors: Grey, Green, Blue, Purple, Yellow, Mythical.',
+    content: 'Recruit troops (up to 6, +1 with Elite Army skill). Upgrade atk/def/spd/luck on selected troops in Army tab. Open packs for rare units. Rarity colors: Grey, Green, Blue, Purple, Yellow, Mythical.',
   },
   {
     key: 'world_dungeon',

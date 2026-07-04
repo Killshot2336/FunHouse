@@ -102,6 +102,29 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
     setEquipping(false);
   };
 
+  const unequipTroop = async (itemId: string, itemName: string) => {
+    try {
+      await api(`/game/inventory/${itemId}/unequip`, { method: 'POST' }, token);
+      notify(`Unequipped ${itemName}`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Unequip failed', 'error');
+    }
+  };
+
+  const unequipCommander = async (itemId: string, itemName: string) => {
+    try {
+      await api('/game/commander/unequip', {
+        method: 'POST',
+        body: JSON.stringify({ item_id: itemId }),
+      }, token);
+      notify(`Unequipped ${itemName} from Commander`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Unequip failed', 'error');
+    }
+  };
+
   const redeemBlueprint = async (itemId: string) => {
     try {
       const res = await api<{
@@ -190,6 +213,16 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
                 )}
                 {!item.equipped_to_unit && !item.equipped_to_commander && (
                   <button onClick={() => sell(item.id)} className="theme-btn text-xs flex-1">Sell</button>
+                )}
+                {item.equipped_to_unit && (
+                  <button onClick={() => unequipTroop(item.id, item.name)} className="theme-btn text-xs flex-1">
+                    Unequip
+                  </button>
+                )}
+                {item.equipped_to_commander && (
+                  <button onClick={() => unequipCommander(item.id, item.name)} className="theme-btn text-xs flex-1">
+                    Unequip
+                  </button>
                 )}
               </div>
             </div>

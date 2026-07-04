@@ -114,6 +114,16 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
     }
   };
 
+  const reject = async (id: string) => {
+    try {
+      await api(`/game/trades/${id}/reject`, { method: 'POST' }, token);
+      notify('Trade declined', 'info');
+      fetch();
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Reject failed', 'error');
+    }
+  };
   const others = ['aden', 'edward', 'jamie'].filter((u) => u !== user!.username);
   const hasOffer = bundleHasContent(offerBundle());
   const hasRequest = bundleHasContent(requestBundle());
@@ -180,8 +190,18 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
                 </div>
               </div>
               {t.to_user === user!.username && t.status === 'pending' && (
-                <button onClick={() => accept(t.id)} className="theme-btn theme-btn-primary text-xs mt-2 w-full">
-                  {isIncomingGift ? 'Accept Gift' : 'Accept Trade'}
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => accept(t.id)} className="theme-btn theme-btn-primary text-xs flex-1">
+                    {isIncomingGift ? 'Accept Gift' : 'Accept Trade'}
+                  </button>
+                  <button onClick={() => reject(t.id)} className="theme-btn text-xs flex-1 opacity-70">
+                    Decline
+                  </button>
+                </div>
+              )}
+              {t.from_user === user!.username && t.status === 'pending' && (
+                <button onClick={() => reject(t.id)} className="theme-btn text-xs mt-2 w-full opacity-70">
+                  Cancel Offer
                 </button>
               )}
             </div>

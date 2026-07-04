@@ -29,6 +29,7 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
   const { triggerFlash } = useCinematicStore();
   const [dungeon, setDungeon] = useState<DungeonState | null>(null);
   const [claiming, setClaiming] = useState(false);
+  const [resetNotice, setResetNotice] = useState(false);
 
   const fetchDungeon = () => {
     api<DungeonState>('/game/dungeon', {}, token).then(setDungeon).catch(() => {});
@@ -37,13 +38,22 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
   useEffect(() => { fetchDungeon(); }, [token, state]);
 
   const resetTarget = dungeon?.resets_at || nextDungeonResetIso();
-  const { label: countdownLabel } = useCountdown(resetTarget);
+  const { label: countdownLabel, done: resetDone } = useCountdown(resetTarget);
+
+  useEffect(() => {
+    if (resetDone) {
+      setResetNotice(true);
+      fetchDungeon();
+      onUpdate();
+    }
+  }, [resetDone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enter = async () => {
     try {
       await api('/game/dungeon/enter', { method: 'POST' }, token);
       playSound(user!.theme, 'buildPlace');
       notify('Entered the dungeon!', 'success');
+      setResetNotice(false);
       fetchDungeon();
       onUpdate();
     } catch (e) {
@@ -73,16 +83,20 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
 
   const run = dungeon.run;
   const progress = run ? (run.room_index / dungeon.room_count) * 100 : 0;
+  const canEnterNew = !run || run.status === 'completed';
 
   return (
     <div className="space-y-4">
       <div className="theme-card p-4">
         <h3 className="text-sm font-bold">30-Minute Dungeon</h3>
         <p className="text-xs opacity-60">Resets in {countdownLabel} · Seed #{dungeon.seed}</p>
+        {resetNotice && (
+          <p className="text-xs text-green-400 mt-1">New dungeon available!</p>
+        )}
         <div className="mt-2 h-2 bg-black/30 rounded overflow-hidden">
           <div className="h-full bg-current transition-all" style={{ width: `${progress}%`, opacity: 0.6 }} />
         </div>
-        {run && (
+        {run && run.status === 'active' && (
           <p className="text-xs mt-1 opacity-50">
             Room {run.room_index + 1}/{dungeon.room_count} · Power: {state.commander.power_rating}
           </p>
@@ -95,7 +109,7 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
             key={room.index}
             className={`theme-card p-3 text-center ${
               run && room.index < run.room_index ? 'opacity-40' :
-              run && room.index === run.room_index ? 'border-2 border-current' : ''
+              run && room.index === run.room_index && run.status === 'active' ? 'border-2 border-current' : ''
             }`}
           >
             <div className="text-2xl">{room.icon}</div>
@@ -106,20 +120,15 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
       </div>
 
       <div className="flex gap-2">
-        {!run && (
+        {canEnterNew && (
           <button onClick={enter} className="theme-btn theme-btn-primary flex-1 py-2 text-sm">
-            Enter Dungeon
+            {run?.status === 'completed' ? 'Enter New Dungeon' : 'Enter Dungeon'}
           </button>
         )}
         {run && run.status === 'active' && (
           <button onClick={claim} disabled={claiming} className="theme-btn theme-btn-primary flex-1 py-2 text-sm">
             {claiming ? 'Claiming...' : 'Clear Room & Claim Loot'}
           </button>
-        )}
-        {run?.status === 'completed' && (
-          <div className="theme-card p-3 flex-1 text-center text-sm text-green-400">
-            Dungeon Complete! {(run.loot_json?.length || 0)} items looted.
-          </div>
         )}
       </div>
     </div>

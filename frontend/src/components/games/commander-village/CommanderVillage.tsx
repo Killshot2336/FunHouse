@@ -212,7 +212,7 @@ export function CommanderVillage() {
       {tab === 'duels' && <DuelArena onUpdate={refresh} />}
       {tab === 'commander' && <CommanderProgress state={state} onUpdate={refresh} />}
       {tab === 'patrol' && <PatrolRaid state={state} onUpdate={refresh} />}
-      {tab === 'missions' && <MissionBoard state={state} />}
+      {tab === 'missions' && <MissionBoard state={state} onUpdate={refresh} />}
       {tab === 'inventory' && <InventoryGrid state={state} onUpdate={refresh} />}
       {tab === 'trade' && <TradeHub state={state} onUpdate={refresh} />}
       {tab === 'info' && <GameGuide state={state} onUpdate={refresh} />}

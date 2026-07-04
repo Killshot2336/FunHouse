@@ -1,10 +1,16 @@
+import { useEffect } from 'react';
 import type { GameState } from './CommanderVillage';
 
 interface MissionBoardProps {
   state: GameState;
+  onUpdate?: () => void;
 }
 
-export function MissionBoard({ state }: MissionBoardProps) {
+export function MissionBoard({ state, onUpdate }: MissionBoardProps) {
+  useEffect(() => {
+    const id = setInterval(() => onUpdate?.(), 15000);
+    return () => clearInterval(id);
+  }, [onUpdate]);
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-bold uppercase tracking-wider">Mission Board</h3>

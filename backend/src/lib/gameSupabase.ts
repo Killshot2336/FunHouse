@@ -235,13 +235,15 @@ function resolveBuildCost(
 }
 
 async function nextSlotIndex(sb: SupabaseClient, userId: string): Promise<number> {
+  const bonuses = await loadBonuses(sb, userId);
+  const max = maxArmySlots(bonuses);
   const { data: units } = await sb.from('game_army_units').select('slot_index').eq('user_id', userId);
   if (!units?.length) return 0;
   const used = new Set(units.map((u) => u.slot_index as number));
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < max; i++) {
     if (!used.has(i)) return i;
   }
-  throw new Error('Army full (max 6)');
+  throw new Error(`Army full (max ${max})`);
 }
 
 async function deleteArmyUnits(sb: SupabaseClient, unitIds: string[]) {
@@ -884,6 +886,45 @@ export async function equipCommanderItem(sb: SupabaseClient, userId: string, ite
   };
 }
 
+export async function unequipItem(sb: SupabaseClient, userId: string, itemId: string) {
+  const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
+  if (!itemRow) throw new Error('Not found');
+  if (!itemRow.equipped_to_unit) throw new Error('Item not equipped on troop');
+
+  const unitId = itemRow.equipped_to_unit as string;
+  const { data: unitRow } = await sb.from('game_army_units').select('*').eq('id', unitId).eq('user_id', userId).single();
+  if (!unitRow) throw new Error('Unit not found');
+
+  const unit = mapUnit(unitRow);
+  const slot = Object.entries(unit.equipment).find(([, id]) => id === itemId)?.[0];
+  if (slot) unit.equipment[slot] = null;
+  unit.stats = removeItemStatsFromUnit(unit.stats as Record<string, unknown>, (itemRow.stats_json || {}) as Record<string, number>) as Unit['stats'];
+
+  await sb.from('game_inventory').update({ equipped_to_unit: null }).eq('id', itemId);
+  await sb.from('game_army_units').update({
+    stats_json: unit.stats,
+    equipment_json: unit.equipment,
+  }).eq('id', unitId);
+  await refreshPower(sb, userId);
+  return { success: true, item: mapInventory({ ...itemRow, equipped_to_unit: null }) };
+}
+
+export async function unequipCommanderItem(sb: SupabaseClient, userId: string, itemId: string) {
+  const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
+  if (!itemRow) throw new Error('Not found');
+  if (!itemRow.equipped_to_commander) throw new Error('Item not equipped on commander');
+
+  const cmd = await getOrCreateCommander(sb, userId);
+  const equipment = parseCommanderEquipment(cmd.commander_equipment_json);
+  for (const [slot, id] of Object.entries(equipment)) {
+    if (id === itemId) equipment[slot] = null;
+  }
+
+  await sb.from('game_inventory').update({ equipped_to_commander: false }).eq('id', itemId);
+  await sb.from('game_commanders').update({ commander_equipment_json: equipment }).eq('user_id', userId);
+  return { success: true, commander_equipment: equipment };
+}
+
 export async function redeemBlueprint(sb: SupabaseClient, userId: string, itemId: string) {
   const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
   if (!itemRow) throw new Error('Not found');
@@ -1056,6 +1097,19 @@ export async function acceptTrade(sb: SupabaseClient, userId: string, tradeId: s
 
   await sb.from('game_trades').update({ status: 'accepted' }).eq('id', tradeId);
   return { trade: { ...trade, status: 'accepted' }, success: true };
+}
+
+export async function rejectTrade(sb: SupabaseClient, userId: string, tradeId: string) {
+  const { data: trade } = await sb
+    .from('game_trades')
+    .select('*')
+    .eq('id', tradeId)
+    .eq('status', 'pending')
+    .single();
+  if (!trade) throw new Error('Trade not found');
+  if (trade.to_user !== userId && trade.from_user !== userId) throw new Error('Not your trade');
+  await sb.from('game_trades').update({ status: 'rejected' }).eq('id', tradeId);
+  return { success: true };
 }
 
 export async function openPack(sb: SupabaseClient, userId: string, packType: PackType) {
@@ -1291,6 +1345,14 @@ export async function getDuels(sb: SupabaseClient, userId: string) {
 export async function createDuel(sb: SupabaseClient, challengerId: string, defenderId: string) {
   const { data } = await sb.from('game_duels').insert({ challenger_id: challengerId, defender_id: defenderId }).select().single();
   return data;
+}
+
+export async function cancelDuel(sb: SupabaseClient, userId: string, duelId: string) {
+  const { data: duel } = await sb.from('game_duels').select('*').eq('id', duelId).eq('status', 'pending').single();
+  if (!duel) throw new Error('Duel not found');
+  if (duel.challenger_id !== userId && duel.defender_id !== userId) throw new Error('Not your duel');
+  await sb.from('game_duels').update({ status: 'cancelled' }).eq('id', duelId);
+  return { success: true };
 }
 
 export async function acceptDuel(sb: SupabaseClient, userId: string, duelId: string) {

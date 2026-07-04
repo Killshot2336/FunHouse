@@ -51,6 +51,21 @@ export function ArmyRoster({ state, onUpdate }: ArmyRosterProps) {
     }
   };
 
+  const upgradeStat = async (stat: 'atk' | 'def' | 'spd' | 'luck') => {
+    if (!selected) return;
+    try {
+      await api(`/game/units/${selected.id}/upgrade`, {
+        method: 'POST',
+        body: JSON.stringify({ stat }),
+      }, token);
+      playSound(user!.theme, 'craft');
+      notify(`${stat.toUpperCase()} upgraded!`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Upgrade failed', 'error');
+    }
+  };
+
   const unitDef = (key: string) => state.config.units.find((u) => u.key === key);
   const selected = state.units.find((u) => u.id === selectedUnit);
 
@@ -91,6 +106,21 @@ export function ArmyRoster({ state, onUpdate }: ArmyRosterProps) {
 
       {selected && (
         <div className="space-y-4">
+          <div className="theme-card p-4 space-y-2">
+            <h3 className="font-bold text-sm">Stat Upgrades</h3>
+            <p className="text-[10px] opacity-50">Costs gold + materials per level</p>
+            <div className="flex flex-wrap gap-2">
+              {(['atk', 'def', 'spd', 'luck'] as const).map((stat) => (
+                <button
+                  key={stat}
+                  onClick={() => upgradeStat(stat)}
+                  className="theme-btn text-xs px-3 py-1.5"
+                >
+                  +{stat.toUpperCase()} ({(selected.stats[stat] as number) || 0})
+                </button>
+              ))}
+            </div>
+          </div>
           <TroopSkillTree state={state} unitId={selected.id} onUpdate={onUpdate} />
           <div className="theme-card p-4 space-y-3">
             <h3 className="font-bold text-sm">Cosmetics</h3>
