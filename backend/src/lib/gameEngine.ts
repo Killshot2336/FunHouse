@@ -103,6 +103,47 @@ export function rollLoot(pity: PityState): { item: typeof LOOT_TABLE[0]; newPity
   return { item: { ...item, stats }, newPity };
 }
 
+export function calcBuildingAccrued(
+  buildings: BuildingState[],
+  lastSeen: string,
+  maxHours = 8
+): Array<{
+  id: string;
+  building_key: string;
+  grid_x: number;
+  grid_y: number;
+  resource: 'gold' | 'materials' | 'food' | 'faction';
+  amount: number;
+  ratePerHour: number;
+}> {
+  const elapsed = Math.min(
+    (Date.now() - new Date(lastSeen).getTime()) / (1000 * 60 * 60),
+    maxHours
+  );
+  if (elapsed < 0) return [];
+
+  const resourceMap: Record<string, 'gold' | 'materials' | 'food' | 'faction'> = {
+    market: 'gold',
+    mine: 'materials',
+    farm: 'food',
+    hq: 'faction',
+  };
+
+  return buildings.map((b) => {
+    const ratePerHour = buildingRate(b.building_key, b.level) * 60;
+    const amount = ratePerHour * elapsed;
+    return {
+      id: b.id,
+      building_key: b.building_key,
+      grid_x: b.grid_x,
+      grid_y: b.grid_y,
+      resource: resourceMap[b.building_key] || 'gold',
+      amount: Math.round(amount * 10) / 10,
+      ratePerHour: Math.round(ratePerHour * 10) / 10,
+    };
+  });
+}
+
 export function calcOfflineResources(
   buildings: BuildingState[],
   lastSeen: string,

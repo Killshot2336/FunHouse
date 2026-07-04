@@ -8,6 +8,8 @@ const router = Router();
 router.use(authMiddleware);
 
 const USERS_LIST = ['aden', 'edward', 'jamie'];
+const EXCLUDED_TASKS = ['Recycling', 'Floors'];
+const CHORES_PER_USER = 3;
 
 function normalizeAssignment(row: Record<string, unknown>) {
   const task = row.master_tasks || row.task;
@@ -24,24 +26,38 @@ function shuffleArray<T>(arr: T[]): T[] {
   return a;
 }
 
+function dealHouseholdChores<T extends { id: string; name: string; active: boolean }>(
+  tasks: T[]
+): Array<{ userId: string; task: T }> {
+  const pool = shuffleArray(tasks.filter((t) => t.active && !EXCLUDED_TASKS.includes(t.name)));
+  const needed = USERS_LIST.length * CHORES_PER_USER;
+  if (pool.length < needed) {
+    throw new Error(`Not enough chores in pool (need ${needed}, have ${pool.length})`);
+  }
+  const shuffled = shuffleArray(pool).slice(0, needed);
+  const deals: Array<{ userId: string; task: T }> = [];
+  for (let i = 0; i < USERS_LIST.length; i++) {
+    for (let j = 0; j < CHORES_PER_USER; j++) {
+      deals.push({ userId: USERS_LIST[i], task: shuffled[i * CHORES_PER_USER + j] });
+    }
+  }
+  return deals;
+}
+
 async function ensureDailyAssignments(store: ReturnType<typeof getDemoStore>, date: string) {
   const existing = store.dailyAssignments.filter((a) => a.assigned_date === date);
   if (existing.length >= 9) return existing;
 
-  const tasks = shuffleArray(store.masterTasks.filter((t) => t.active));
   store.dailyAssignments = store.dailyAssignments.filter((a) => a.assigned_date !== date);
-
-  for (const userId of USERS_LIST) {
-    const userTasks = shuffleArray(tasks).slice(0, 3);
-    for (const task of userTasks) {
-      store.dailyAssignments.push({
-        id: uuid(),
-        user_id: userId,
-        task_id: task.id,
-        assigned_date: date,
-        completed: false,
-      });
-    }
+  const deals = dealHouseholdChores(store.masterTasks);
+  for (const { userId, task } of deals) {
+    store.dailyAssignments.push({
+      id: uuid(),
+      user_id: userId,
+      task_id: task.id,
+      assigned_date: date,
+      completed: false,
+    });
   }
   return store.dailyAssignments.filter((a) => a.assigned_date === date);
 }
@@ -78,14 +94,12 @@ router.get('/daily', async (_req: Request, res: Response) => {
   const { data: tasks } = await supabase.from('master_tasks').select('*').eq('active', true);
   if (!tasks?.length) return res.json([]);
 
-  const shuffled = shuffleArray(tasks);
-  const inserts = [];
-  for (const userId of USERS_LIST) {
-    const userTasks = shuffleArray(shuffled).slice(0, 3);
-    for (const task of userTasks) {
-      inserts.push({ user_id: userId, task_id: task.id, assigned_date: today });
-    }
-  }
+  const deals = dealHouseholdChores(tasks);
+  const inserts = deals.map(({ userId, task }) => ({
+    user_id: userId,
+    task_id: task.id,
+    assigned_date: today,
+  }));
 
   await supabase.from('daily_assignments').upsert(inserts, { onConflict: 'user_id,task_id,assigned_date' });
   const { data } = await supabase.from('daily_assignments').select('*, master_tasks(*)').eq('assigned_date', today);

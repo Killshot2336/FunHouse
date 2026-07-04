@@ -22,8 +22,18 @@ export interface GameState {
     power_rating: number;
     story_seen: boolean;
     grid_size: number;
+    last_seen_at: string;
   };
   buildings: Array<{ id: string; building_key: string; grid_x: number; grid_y: number; level: number }>;
+  building_accrued: Array<{
+    id: string;
+    building_key: string;
+    grid_x: number;
+    grid_y: number;
+    resource: 'gold' | 'materials' | 'food' | 'faction';
+    amount: number;
+    ratePerHour: number;
+  }>;
   units: Array<{
     id: string; unit_key: string; slot_index: number;
     stats: { atk: number; def: number; spd: number; luck: number };
@@ -61,6 +71,11 @@ export function CommanderVillage() {
   }, [token]);
 
   useEffect(() => { fetchState(); }, [fetchState]);
+
+  useEffect(() => {
+    const id = setInterval(() => fetchState(), 30000);
+    return () => clearInterval(id);
+  }, [fetchState]);
 
   const refresh = () => fetchState();
 

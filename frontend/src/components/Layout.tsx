@@ -9,6 +9,7 @@ import { CatCarePage } from './CatCarePage';
 import { FinancePage } from './FinancePage';
 import { MiniGamesPage } from './MiniGamesPage';
 import { StashPage } from './StashPage';
+import { SettingsPage } from './SettingsPage';
 import { HoloCard } from './effects/HoloCard';
 
 type Page = 'dashboard' | 'tasks' | 'cats' | 'finance' | 'bored' | 'stash';
@@ -20,18 +21,12 @@ const pageVariants = {
 };
 
 export function Layout() {
-  const { user, demoMode, resetDevice } = useAuthStore();
-  const { message, type, clear, show } = useNotificationStore();
+  const { user, demoMode } = useAuthStore();
+  const { message, type, clear } = useNotificationStore();
   const { triggerFlash } = useCinematicStore();
   const copy = themeCopy[user!.theme];
   const [page, setPage] = useState<Page>('dashboard');
-  const [showReset, setShowReset] = useState(false);
-
-  const handleResetDevice = () => {
-    resetDevice();
-    setShowReset(false);
-    show('Device reset — tap your name again', 'info');
-  };
+  const [showSettings, setShowSettings] = useState(false);
 
   const switchPage = (key: Page) => {
     if (key !== page) {
@@ -71,20 +66,15 @@ export function Layout() {
         </div>
         <div className="flex items-center gap-2">
           {demoMode && <span className="text-[10px] opacity-40 border border-current px-2 py-0.5 rounded tracking-wider">DEMO</span>}
-          <button onClick={() => setShowReset(true)} className="theme-btn text-xs px-2 py-1 opacity-40 hover:opacity-100">⚙️</button>
+          <button onClick={() => setShowSettings(true)} className="theme-btn text-xs px-2 py-1 opacity-40 hover:opacity-100">⚙️</button>
         </div>
       </motion.header>
 
-      {showReset && (
+      {showSettings && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
-          <HoloCard intense className="w-full max-w-sm">
+          <HoloCard intense className="w-full max-w-md max-h-[85vh] overflow-y-auto">
             <div className="p-6">
-              <h3 className="font-bold mb-2 glow-text">Wrong person?</h3>
-              <p className="text-sm opacity-70 mb-4">Reset clears this device so someone else can tap their name.</p>
-              <div className="flex gap-2">
-                <button onClick={() => setShowReset(false)} className="theme-btn flex-1 py-2">Cancel</button>
-                <button onClick={handleResetDevice} className="theme-btn theme-btn-primary flex-1 py-2">Reset</button>
-              </div>
+              <SettingsPage onClose={() => setShowSettings(false)} />
             </div>
           </HoloCard>
         </div>

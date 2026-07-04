@@ -12,10 +12,17 @@ import {
 } from './gameConfig.js';
 import {
   calcOfflineResources,
+  calcBuildingAccrued,
   rollLoot,
   defaultUnitStats,
   type BuildingState,
 } from './gameEngine.js';
+import {
+  type TradeResources,
+  hasEnoughResources,
+  applyResourceDelta,
+  tradeDescription,
+} from './tradeResources.js';
 
 export interface Commander {
   user_id: string;
@@ -172,6 +179,7 @@ export async function getGameState(sb: SupabaseClient, userId: string) {
   return {
     commander: cmd,
     buildings: buildingsRes.data || [],
+    building_accrued: calcBuildingAccrued((buildingsRes.data || []) as BuildingState[], cmd.last_seen_at),
     units: (unitsRes.data || []).map(mapUnit),
     inventory: (inventoryRes.data || []).map(mapInventory),
     missions: missionsRes.data || [],
@@ -538,12 +546,20 @@ export async function createTrade(
   sb: SupabaseClient,
   fromUser: string,
   to_user: string,
-  offer: Record<string, unknown>,
-  request: Record<string, unknown>
+  offer: TradeResources,
+  request: TradeResources
 ) {
+  const fromCmd = await getOrCreateCommander(sb, fromUser);
+  if (!hasEnoughResources(fromCmd, offer)) throw new Error('Not enough resources to offer');
+
   const { data: trade } = await sb
     .from('game_trades')
-    .insert({ from_user: fromUser, to_user, offer_json: offer, request_json: request })
+    .insert({
+      from_user: fromUser,
+      to_user,
+      offer_json: { ...offer, description: tradeDescription(offer) },
+      request_json: { ...request, description: tradeDescription(request) },
+    })
     .select()
     .single();
 
@@ -561,20 +577,31 @@ export async function acceptTrade(sb: SupabaseClient, userId: string, tradeId: s
 
   if (!trade) throw new Error('Trade not found');
 
-  const offer = trade.offer_json as { gold?: number; item_ids?: string[] };
-  const request = trade.request_json as { gold?: number; item_ids?: string[] };
+  const offer = trade.offer_json as TradeResources;
+  const request = trade.request_json as TradeResources;
 
   const fromCmd = await getOrCreateCommander(sb, trade.from_user);
   const toCmd = await getOrCreateCommander(sb, trade.to_user);
 
-  if (offer.gold) {
-    await sb.from('game_commanders').update({ gold: fromCmd.gold - offer.gold }).eq('user_id', trade.from_user);
-    await sb.from('game_commanders').update({ gold: toCmd.gold + offer.gold }).eq('user_id', trade.to_user);
-  }
-  if (request.gold) {
-    await sb.from('game_commanders').update({ gold: toCmd.gold - request.gold }).eq('user_id', trade.to_user);
-    await sb.from('game_commanders').update({ gold: fromCmd.gold + request.gold }).eq('user_id', trade.from_user);
-  }
+  if (!hasEnoughResources(fromCmd, offer)) throw new Error('Offerer lacks resources');
+  if (!hasEnoughResources(toCmd, request)) throw new Error('You lack requested resources');
+
+  const newFrom = applyResourceDelta(applyResourceDelta(fromCmd, offer, -1), request, 1);
+  const newTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
+
+  await sb.from('game_commanders').update({
+    gold: newFrom.gold,
+    materials: newFrom.materials,
+    food: newFrom.food,
+    faction_currency: newFrom.faction_currency,
+  }).eq('user_id', trade.from_user);
+
+  await sb.from('game_commanders').update({
+    gold: newTo.gold,
+    materials: newTo.materials,
+    food: newTo.food,
+    faction_currency: newTo.faction_currency,
+  }).eq('user_id', trade.to_user);
 
   if (offer.item_ids) {
     for (const id of offer.item_ids) {

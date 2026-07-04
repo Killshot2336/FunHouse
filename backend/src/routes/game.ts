@@ -15,10 +15,17 @@ import {
 } from '../lib/gameConfig.js';
 import {
   calcOfflineResources,
+  calcBuildingAccrued,
   rollLoot,
   defaultUnitStats,
 } from '../lib/gameEngine.js';
 import * as gameDb from '../lib/gameSupabase.js';
+import {
+  type TradeResources,
+  hasEnoughResources,
+  applyResourceDelta,
+  tradeDescription,
+} from '../lib/tradeResources.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -74,6 +81,13 @@ function handleGameError(res: Response, err: unknown) {
   return res.status(status).json({ error: message });
 }
 
+function buildAccruedPayload(store: ReturnType<typeof getDemoStore>, userId: string) {
+  const cmd = store.gameCommanders.find((c) => c.user_id === userId);
+  if (!cmd) return [];
+  const buildings = store.gameBuildings.filter((b) => b.user_id === userId);
+  return calcBuildingAccrued(buildings, cmd.last_seen_at);
+}
+
 router.get('/state', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
 
@@ -85,6 +99,7 @@ router.get('/state', async (req: Request, res: Response) => {
     return res.json({
       commander: cmd,
       buildings: store.gameBuildings.filter((b) => b.user_id === user.username),
+      building_accrued: buildAccruedPayload(store, user.username),
       units: store.gameUnits.filter((u) => u.user_id === user.username),
       inventory: store.gameInventory.filter((i) => i.user_id === user.username),
       missions: store.gameMissions.filter((m) => m.user_id === user.username),
@@ -417,9 +432,16 @@ router.post('/trades', async (req: Request, res: Response) => {
   const { to_user, offer, request } = req.body;
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
+    const fromCmd = getOrCreateCommander(store, user.username);
+    const offerBundle = offer as TradeResources;
+    const requestBundle = request as TradeResources;
+    if (!hasEnoughResources(fromCmd, offerBundle)) {
+      return res.status(400).json({ error: 'Not enough resources to offer' });
+    }
     const trade = {
       id: uuid(), from_user: user.username, to_user,
-      offer_json: offer, request_json: request,
+      offer_json: { ...offerBundle, description: tradeDescription(offerBundle) },
+      request_json: { ...requestBundle, description: tradeDescription(requestBundle) },
       status: 'pending', created_at: new Date().toISOString(),
     };
     store.gameTrades.push(trade);
@@ -438,13 +460,24 @@ router.post('/trades/:id/accept', async (req: Request, res: Response) => {
     const trade = store.gameTrades.find((t) => t.id === tradeId && t.to_user === user.username && t.status === 'pending');
     if (!trade) return res.status(404).json({ error: 'Trade not found' });
 
-    const offer = trade.offer_json as { gold?: number; item_ids?: string[] };
-    const request = trade.request_json as { gold?: number; item_ids?: string[] };
+    const offer = trade.offer_json as TradeResources;
+    const request = trade.request_json as TradeResources;
     const fromCmd = getOrCreateCommander(store, trade.from_user);
     const toCmd = getOrCreateCommander(store, trade.to_user);
 
-    if (offer.gold) { fromCmd.gold -= offer.gold; toCmd.gold += offer.gold; }
-    if (request.gold) { toCmd.gold -= request.gold; fromCmd.gold += request.gold; }
+    if (!hasEnoughResources(fromCmd, offer)) return res.status(400).json({ error: 'Offerer lacks resources' });
+    if (!hasEnoughResources(toCmd, request)) return res.status(400).json({ error: 'You lack requested resources' });
+
+    const finalFrom = applyResourceDelta(applyResourceDelta(fromCmd, offer, -1), request, 1);
+    const finalTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
+    fromCmd.gold = finalFrom.gold;
+    fromCmd.materials = finalFrom.materials;
+    fromCmd.food = finalFrom.food;
+    fromCmd.faction_currency = finalFrom.faction_currency;
+    toCmd.gold = finalTo.gold;
+    toCmd.materials = finalTo.materials;
+    toCmd.food = finalTo.food;
+    toCmd.faction_currency = finalTo.faction_currency;
 
     if (offer.item_ids) {
       for (const id of offer.item_ids) {

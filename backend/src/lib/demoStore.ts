@@ -61,9 +61,9 @@ const MASTER_TASKS = [
   { name: 'Vacuum', description: 'Vacuum common areas', icon: '🧹' },
   { name: 'Bathroom', description: 'Clean bathroom surfaces', icon: '🚿' },
   { name: 'Counters', description: 'Wipe down kitchen counters', icon: '🧽' },
-  { name: 'Floors', description: 'Mop or sweep floors', icon: '🧹' },
+  { name: 'Floors', description: 'Mop or sweep floors', icon: '🧹', active: false },
   { name: 'Laundry', description: 'Do a load of laundry', icon: '👕' },
-  { name: 'Recycling', description: 'Sort and take out recycling', icon: '♻️' },
+  { name: 'Recycling', description: 'Sort and take out recycling', icon: '♻️', active: false },
   { name: 'Plants', description: 'Water household plants', icon: '🌱' },
   { name: 'Pet Area', description: 'Clean pet feeding area', icon: '🐾' },
   { name: 'Fridge', description: 'Clean out expired fridge items', icon: '🧊' },
@@ -71,7 +71,7 @@ const MASTER_TASKS = [
 
 function createInitialStore(): DemoStore {
   const weekStart = getWeekStart();
-  const masterTasks = MASTER_TASKS.map((t) => ({ id: uuid(), ...t, active: true }));
+  const masterTasks = MASTER_TASKS.map((t) => ({ id: uuid(), active: true, ...t }));
 
   return {
     cats: [

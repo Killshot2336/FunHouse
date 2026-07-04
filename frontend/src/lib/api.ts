@@ -33,7 +33,10 @@ export async function api<T>(
 
 export type SoundType = 'complete' | 'notification' | 'click' | 'craft' | 'legendary' | 'missionComplete' | 'buildPlace';
 
+import { isSoundEnabled } from '../stores/settings';
+
 export function playSound(theme: string, type: SoundType) {
+  if (!isSoundEnabled()) return;
   try {
     const ctx = new AudioContext();
     const osc = ctx.createOscillator();
