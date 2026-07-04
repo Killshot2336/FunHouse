@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useAuthStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, playSound } from '../../../lib/api';
 import { COMMANDER_SKILL_BRANCHES, type CommanderSkillBranch } from './gameConfig';
 
 interface SkillDef {
@@ -26,15 +26,20 @@ const BRANCH_META: Record<CommanderSkillBranch, { label: string; icon: string; c
 };
 
 export function CommanderSkillTree({ skills, spent, spUnspent, onSpend }: CommanderSkillTreeProps) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [unlocking, setUnlocking] = useState<string | null>(null);
 
   const unlock = async (skill: SkillDef) => {
     setUnlocking(skill.key);
     try {
       await api('/progress/spend', { method: 'POST', body: JSON.stringify({ skill_key: skill.key }) }, token);
+      playSound(user!.theme, 'complete');
+      notify(`${skill.name} unlocked!`, 'success');
       onSpend();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Skill unlock failed', 'error');
+    }
     setUnlocking(null);
   };
 

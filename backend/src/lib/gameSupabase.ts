@@ -62,6 +62,13 @@ import {
   type Stockpile,
 } from './economyEngine.js';
 import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from './progressEngine.js';
+import {
+  getCommanderBonuses,
+  maxArmySlots,
+  scaleOreMap,
+  scaleItemStats,
+  type CommanderBonuses,
+} from './commanderSkills.js';
 import { awardXp } from '../routes/progress.js';
 import {
   type TradeResources,
@@ -74,6 +81,30 @@ import {
   sanitizeTradeBundle,
   HOUSE_USERS,
 } from './tradeResources.js';
+
+async function loadBonuses(sb: SupabaseClient, userId: string): Promise<CommanderBonuses> {
+  const { data } = await sb.from('profile_progress').select('sp_spent_json').eq('user_id', userId).single();
+  return getCommanderBonuses((data?.sp_spent_json as string[]) || []);
+}
+
+function pityThresholds(b: CommanderBonuses) {
+  return { rare: b.pityRareAt, legendary: b.pityLegendaryAt };
+}
+
+function applyTradeReceiveBonus(
+  cmd: CommanderResources,
+  received: TradeResources,
+  bonuses: CommanderBonuses
+): CommanderResources {
+  if (bonuses.tradeValue <= 1) return cmd;
+  const extra = bonuses.tradeValue - 1;
+  return {
+    gold: cmd.gold + Math.floor((received.gold || 0) * extra),
+    materials: cmd.materials + Math.floor((received.materials || 0) * extra),
+    food: cmd.food + Math.floor((received.food || 0) * extra),
+    faction_currency: cmd.faction_currency + Math.floor((received.faction_currency || 0) * extra),
+  };
+}
 
 export interface Commander {
   user_id: string;
@@ -275,11 +306,18 @@ export async function refreshPower(sb: SupabaseClient, userId: string): Promise<
 
 export async function applyOffline(sb: SupabaseClient, userId: string): Promise<Commander> {
   const cmd = await getOrCreateCommander(sb, userId);
+  const bonuses = await loadBonuses(sb, userId);
   const { data: buildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
 
   const buildingStates = (buildings || []) as BuildingState[];
   const offline = calcOfflineResources(buildingStates, cmd.last_seen_at);
-  const stockpileAccrual = calcStockpileAccrual(buildingStates, cmd.last_seen_at);
+  const stockpileAccrual = calcStockpileAccrual(
+    buildingStates,
+    cmd.last_seen_at,
+    8,
+    bonuses.farmYield,
+    bonuses.cropSpeed
+  );
   const mergedStockpile = mergeStockpile(cmd.stockpile_json, stockpileAccrual);
 
   const updated = {
@@ -468,6 +506,7 @@ export async function placeBuilding(
 
 export async function recruitUnit(sb: SupabaseClient, userId: string, unit_key: string) {
   const cmd = await getOrCreateCommander(sb, userId);
+  const bonuses = await loadBonuses(sb, userId);
   const patron = cmd.patron as Patron;
   const unitDef = UNITS_BY_PATRON[patron]?.find((u) => u.key === unit_key);
   if (!unitDef) throw new Error('Invalid unit');
@@ -477,10 +516,12 @@ export async function recruitUnit(sb: SupabaseClient, userId: string, unit_key: 
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId);
 
-  if ((count || 0) >= 6) throw new Error('Army full (max 6)');
-  if (cmd.gold < unitDef.baseCost) throw new Error('Not enough gold');
+  const maxSlots = maxArmySlots(bonuses);
+  if ((count || 0) >= maxSlots) throw new Error(`Army full (max ${maxSlots})`);
+  const cost = Math.max(1, Math.floor(unitDef.baseCost * bonuses.recruitDiscount));
+  if (cmd.gold < cost) throw new Error('Not enough gold');
 
-  await sb.from('game_commanders').update({ gold: cmd.gold - unitDef.baseCost }).eq('user_id', userId);
+  await sb.from('game_commanders').update({ gold: cmd.gold - cost }).eq('user_id', userId);
 
   const slot = await nextSlotIndex(sb, userId);
   const { data: unit } = await sb
@@ -608,14 +649,16 @@ export async function claimPatrol(sb: SupabaseClient, userId: string, patrolId: 
   if (new Date(patrol.completes_at) > new Date()) throw new Error('Patrol not complete');
   if (patrol.result_json) throw new Error('Already claimed');
 
+  const bonuses = await loadBonuses(sb, userId);
+  const thresholds = pityThresholds(bonuses);
   const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
   let pity = pityRow || { rolls_since_rare: 0, rolls_since_legendary: 0 };
 
   const drops: InventoryItem[] = [];
-  const numRolls = 1 + Math.floor(Math.random() * 2);
+  const numRolls = 1 + Math.floor(Math.random() * 2) + bonuses.patrolExtraRolls;
 
   for (let i = 0; i < numRolls; i++) {
-    const { item, newPity } = rollLoot(pity, userId);
+    const { item, newPity } = rollLoot(pity, userId, thresholds);
     pity = newPity;
 
     const { data: inv } = await sb
@@ -769,7 +812,7 @@ export async function sellItem(sb: SupabaseClient, userId: string, itemId: strin
   if (!itemRow) throw new Error('Not found');
   if (itemRow.equipped_to_unit) throw new Error('Unequip from troop first');
 
-  const price = itemSellPrice(itemRow.item_id, itemRow.rarity);
+  const price = Math.floor(itemSellPrice(itemRow.item_id, itemRow.rarity) * (await loadBonuses(sb, userId)).marketSell);
   const cmd = await getOrCreateCommander(sb, userId);
 
   if (itemRow.equipped_to_commander) {
@@ -867,13 +910,18 @@ export async function acceptTrade(sb: SupabaseClient, userId: string, tradeId: s
   }
 
   const newFrom = applyResourceDelta(applyResourceDelta(fromCmd, offer, -1), request, 1);
-  const newTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
+  let newTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
+
+  const toBonuses = await loadBonuses(sb, trade.to_user);
+  const fromBonuses = await loadBonuses(sb, trade.from_user);
+  newTo = applyTradeReceiveBonus(newTo, offer, toBonuses);
+  let newFromFinal = applyTradeReceiveBonus(newFrom, request, fromBonuses);
 
   await sb.from('game_commanders').update({
-    gold: newFrom.gold,
-    materials: newFrom.materials,
-    food: newFrom.food,
-    faction_currency: newFrom.faction_currency,
+    gold: newFromFinal.gold,
+    materials: newFromFinal.materials,
+    food: newFromFinal.food,
+    faction_currency: newFromFinal.faction_currency,
   }).eq('user_id', trade.from_user);
 
   await sb.from('game_commanders').update({
@@ -910,6 +958,9 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
 
   const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
   const pity = pityRow || { rolls_since_rare: 0, rolls_since_legendary: 0 };
+  const bonuses = await loadBonuses(sb, userId);
+  const thresholds = pityThresholds(bonuses);
+  const maxSlots = maxArmySlots(bonuses);
 
   const { count: armyCount } = await sb
     .from('game_army_units')
@@ -917,7 +968,7 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
     .eq('user_id', userId);
 
   let pullTroop = category === 'troop' || (category === 'mixed' && Math.random() < 0.35);
-  if (pullTroop && (armyCount || 0) >= 6) {
+  if (pullTroop && (armyCount || 0) >= maxSlots) {
     if (category === 'troop') {
       await sb.from('game_commanders').update({
         gold: cmd.gold,
@@ -940,7 +991,7 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
 
   if (!pullTroop) {
     const itemTypes = category === 'weapon' ? 'weapon' : category === 'armor' ? 'armor' : ['weapon', 'armor', 'relic'];
-    const rolled = rollPackLoot(pity, itemTypes, userId);
+    const rolled = rollPackLoot(pity, itemTypes, userId, thresholds);
     await sb.from('game_drop_pity').upsert({
       user_id: userId,
       rolls_since_rare: rolled.newPity.rolls_since_rare,
@@ -968,7 +1019,7 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
     };
   }
 
-  const rolled = rollPackUnit(cmd.patron as Patron, pity, userId);
+  const rolled = rollPackUnit(cmd.patron as Patron, pity, userId, thresholds);
   await sb.from('game_drop_pity').upsert({
     user_id: userId,
     rolls_since_rare: rolled.newPity.rolls_since_rare,
@@ -1037,8 +1088,9 @@ export async function getLeaderboard(sb: SupabaseClient) {
 
 export async function expandGrid(sb: SupabaseClient, userId: string) {
   const cmd = await getOrCreateCommander(sb, userId);
+  const bonuses = await loadBonuses(sb, userId);
   if (cmd.grid_size >= 16) throw new Error('Max grid size reached');
-  const cost = expandGridCost(cmd.grid_size);
+  const cost = Math.max(1, Math.floor(expandGridCost(cmd.grid_size) * bonuses.gridDiscount));
   if (cmd.gold < cost) throw new Error('Not enough gold');
   await sb.from('game_commanders').update({ gold: cmd.gold - cost, grid_size: cmd.grid_size + 2 }).eq('user_id', userId);
   const { data } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
@@ -1046,6 +1098,7 @@ export async function expandGrid(sb: SupabaseClient, userId: string) {
 }
 
 export async function getZones(sb: SupabaseClient, userId: string) {
+  const bonuses = await loadBonuses(sb, userId);
   const { data: zones } = await sb.from('game_zones').select('*');
   const { data: deployments } = await sb.from('game_zone_deployments').select('*');
   return {
@@ -1054,9 +1107,11 @@ export async function getZones(sb: SupabaseClient, userId: string) {
       deployments: (deployments || []).filter((d) => d.zone_id === z.id).map((d) => ({
         user_id: d.user_id,
         unit_count: (d.unit_ids as string[]).length,
+        ...(bonuses.scoutRange && d.user_id !== userId ? { deployed_power: d.deployed_power } : {}),
       })),
     })),
     zone_types: ZONE_TYPES,
+    scout_range: bonuses.scoutRange,
   };
 }
 
@@ -1071,17 +1126,23 @@ export async function deployToZone(sb: SupabaseClient, userId: string, zoneId: s
   }
 
   const power = units.reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  const bonuses = await loadBonuses(sb, userId);
+  const scaledPower = Math.floor(power * bonuses.troopStats);
   await sb.from('game_zone_deployments').delete().eq('zone_id', zoneId).eq('user_id', userId);
-  await sb.from('game_zone_deployments').insert({ zone_id: zoneId, user_id: userId, unit_ids: unitIds, deployed_power: power });
-  return { deployed: true, power };
+  await sb.from('game_zone_deployments').insert({ zone_id: zoneId, user_id: userId, unit_ids: unitIds, deployed_power: scaledPower });
+  return { deployed: true, power: scaledPower };
 }
 
 export async function attackZone(sb: SupabaseClient, userId: string, zoneId: string, unitIds: string[]) {
+  const bonuses = await loadBonuses(sb, userId);
   const { data: zone } = await sb.from('game_zones').select('*').eq('id', zoneId).single();
   if (!zone) throw new Error('Zone not found');
   const { data: atkUnits } = await sb.from('game_army_units').select('*').eq('user_id', userId).in('id', unitIds);
   if (!atkUnits || atkUnits.length !== unitIds.length) throw new Error('Invalid units');
-  const atkPower = atkUnits.reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  const atkPower = atkUnits.reduce(
+    (s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>, bonuses.troopStats),
+    0
+  );
   const { data: defDeps } = await sb.from('game_zone_deployments').select('*').eq('zone_id', zoneId).neq('user_id', userId);
   const defPower = (defDeps || []).reduce((s, d) => s + d.deployed_power, 0);
   const variance = 0.95 + Math.random() * 0.1;
@@ -1099,7 +1160,7 @@ export async function attackZone(sb: SupabaseClient, userId: string, zoneId: str
     }
     const yieldJson = zone.yield_json as Record<string, number>;
     const cmdRes = { gold: cmd.gold, materials: cmd.materials, food: cmd.food, faction_currency: cmd.faction_currency };
-    applyZoneYield(cmdRes, yieldJson);
+    applyZoneYield(cmdRes, yieldJson, bonuses.zoneYield);
     await sb.from('game_commanders').update(cmdRes).eq('user_id', userId);
     await sb.from('game_zones').update({ owner_user_id: userId }).eq('id', zoneId);
     await sb.from('game_zone_deployments').upsert({ zone_id: zoneId, user_id: userId, unit_ids: unitIds, deployed_power: atkPower });
@@ -1149,8 +1210,18 @@ export async function acceptDuel(sb: SupabaseClient, userId: string, duelId: str
 
   const { data: chUnits } = await sb.from('game_army_units').select('*').eq('user_id', duel.challenger_id);
   const { data: defUnits } = await sb.from('game_army_units').select('*').eq('user_id', duel.defender_id);
-  const chPower = applyHiddenDuelLuck(duel.challenger_id, (chUnits || []).reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0));
-  const defPower = applyHiddenDuelLuck(duel.defender_id, (defUnits || []).reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0));
+  const chBonuses = await loadBonuses(sb, duel.challenger_id);
+  const defBonuses = await loadBonuses(sb, duel.defender_id);
+  let chPower = (chUnits || []).reduce(
+    (s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>, chBonuses.troopStats),
+    0
+  );
+  let defPower = (defUnits || []).reduce(
+    (s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>, defBonuses.troopStats),
+    0
+  );
+  chPower = applyHiddenDuelLuck(duel.challenger_id, chPower * chBonuses.duelLuck);
+  defPower = applyHiddenDuelLuck(duel.defender_id, defPower * defBonuses.duelLuck);
   const challengerWins = chPower * (0.95 + Math.random() * 0.1) > defPower;
   const winnerId = challengerWins ? duel.challenger_id : duel.defender_id;
 
@@ -1179,6 +1250,7 @@ export async function sellResource(
 ) {
   if (amount <= 0) throw new Error('Invalid amount');
   const cmd = await getOrCreateCommander(sb, userId);
+  const bonuses = await loadBonuses(sb, userId);
   const stockpile = parseStockpile(cmd.stockpile_json);
   const hourSeed = Math.floor(Date.now() / 3600000);
   const cropPrices = getCropPrices(hourSeed);
@@ -1189,12 +1261,12 @@ export async function sellResource(
     const available = stockpile.crops[resourceType] || 0;
     if (available < amount) throw new Error('Not enough crops');
     stockpile.crops[resourceType] = available - amount;
-    goldEarned = cropPrices[resourceType] * amount;
+    goldEarned = Math.floor(cropPrices[resourceType] * amount * bonuses.marketSell);
   } else if (orePrices[resourceType] !== undefined) {
     const available = stockpile.ores[resourceType] || 0;
     if (available < amount) throw new Error('Not enough ores');
     stockpile.ores[resourceType] = available - amount;
-    goldEarned = orePrices[resourceType] * amount;
+    goldEarned = Math.floor(orePrices[resourceType] * amount * bonuses.marketSell);
   } else {
     throw new Error('Unknown resource type');
   }
@@ -1281,6 +1353,7 @@ export async function mineCollect(sb: SupabaseClient, userId: string, buildingId
   if (building.building_key !== 'mine') throw new Error('Not a mine');
 
   const cmd = await getOrCreateCommander(sb, userId);
+  const bonuses = await loadBonuses(sb, userId);
   const meta = (building.building_meta_json || defaultBuildingMeta('mine')) as { upgrades: Record<string, number> };
   const { data: smithy } = await sb.from('game_village_buildings').select('building_meta_json').eq('user_id', userId).eq('building_key', 'smithy').limit(1).single();
   const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || {};
@@ -1288,7 +1361,7 @@ export async function mineCollect(sb: SupabaseClient, userId: string, buildingId
   const deepShaft = meta.upgrades?.['1'] || 0;
   const effectiveLevel = building.level + deepShaft;
 
-  const ores = rollOres(pickaxeTier, effectiveLevel, Date.now());
+  const ores = scaleOreMap(rollOres(pickaxeTier, effectiveLevel, Date.now()), bonuses.mineYield);
   const stockpile = parseStockpile(cmd.stockpile_json);
   for (const [k, v] of Object.entries(ores)) {
     stockpile.ores[k] = (stockpile.ores[k] || 0) + v;
@@ -1350,11 +1423,14 @@ export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
   const cmd = await getOrCreateCommander(sb, userId);
   if (cmd.power_rating < room.enemyPower * 0.8) throw new Error('Not strong enough for this room');
 
+  const bonuses = await loadBonuses(sb, userId);
+  const thresholds = pityThresholds(bonuses);
   let pity = { rolls_since_rare: 0, rolls_since_legendary: 0 };
   const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
   if (pityRow) pity = pityRow;
 
-  const { item, newPity } = rollLoot(pity, userId);
+  const { item, newPity } = rollLoot(pity, userId, thresholds);
+  const scaledStats = scaleItemStats(item.stats as Record<string, number>, bonuses.dungeonLoot);
   await sb.from('game_drop_pity').upsert({
     user_id: userId,
     rolls_since_rare: newPity.rolls_since_rare,
@@ -1366,7 +1442,7 @@ export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
     item_id: item.id,
     name: item.name,
     rarity: item.rarity,
-    stats_json: item.stats,
+    stats_json: scaledStats,
     quantity: 1,
   }).select().single();
 

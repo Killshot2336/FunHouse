@@ -87,15 +87,24 @@ export function applyHiddenDuelLuck(userId: string, power: number): number {
   return power;
 }
 
-export function rollRarity(pity: PityState, userId?: string): { rarity: Rarity; newPity: PityState } {
+export interface PityThresholds {
+  rare: number;
+  legendary: number;
+}
+
+export function rollRarity(
+  pity: PityState,
+  userId?: string,
+  thresholds: PityThresholds = { rare: 40, legendary: 300 }
+): { rarity: Rarity; newPity: PityState } {
   const newPity = { ...pity, rolls_since_rare: pity.rolls_since_rare + 1, rolls_since_legendary: pity.rolls_since_legendary + 1 };
 
-  if (newPity.rolls_since_legendary >= 300) {
+  if (newPity.rolls_since_legendary >= thresholds.legendary) {
     newPity.rolls_since_legendary = 0;
     newPity.rolls_since_rare = 0;
     return { rarity: applyHiddenLuck(userId, 'legendary'), newPity };
   }
-  if (newPity.rolls_since_rare >= 40) {
+  if (newPity.rolls_since_rare >= thresholds.rare) {
     newPity.rolls_since_rare = 0;
     const roll = Math.random() * 100;
     let cumulative = 0;
@@ -116,8 +125,12 @@ export function rollRarity(pity: PityState, userId?: string): { rarity: Rarity; 
   return { rarity: applyHiddenLuck(userId, 'common'), newPity };
 }
 
-export function rollLoot(pity: PityState, userId?: string): { item: typeof LOOT_TABLE[0]; newPity: PityState } {
-  const { rarity, newPity } = rollRarity(pity, userId);
+export function rollLoot(
+  pity: PityState,
+  userId?: string,
+  thresholds?: PityThresholds
+): { item: typeof LOOT_TABLE[0]; newPity: PityState } {
+  const { rarity, newPity } = rollRarity(pity, userId, thresholds);
   const pool = LOOT_TABLE.filter((i) => i.rarity === rarity);
   const item = pool[Math.floor(Math.random() * pool.length)] || LOOT_TABLE[0];
   const variance = 0.85 + Math.random() * 0.3;
@@ -210,7 +223,9 @@ export function calcOfflineResources(
 export function calcStockpileAccrual(
   buildings: BuildingState[],
   lastSeen: string,
-  maxHours = 8
+  maxHours = 8,
+  skillFarmYield = 1,
+  skillCropSpeed = 1
 ): Stockpile {
   const elapsed = Math.min(
     (Date.now() - new Date(lastSeen).getTime()) / (1000 * 60 * 60),
@@ -222,15 +237,17 @@ export function calcStockpileAccrual(
   for (const b of buildings) {
     const rate = buildingRate(b.building_key, b.level) * elapsed * 60;
     const meta = (b.building_meta_json || {}) as { crop?: string; upgrades?: Record<string, number> };
-    const yieldMult = 1 + ((meta.upgrades?.['1'] || 0) * 0.1);
+    const buildingYieldMult = 1 + ((meta.upgrades?.['1'] || 0) * 0.1);
+    const cropMult = buildingYieldMult * skillFarmYield * skillCropSpeed;
+    const resourceMult = buildingYieldMult * skillFarmYield;
 
     if (b.building_key === 'farm' || b.building_key === 'greenhouse') {
       const crop = meta.crop || 'corn';
-      stockpile.crops[crop] = (stockpile.crops[crop] || 0) + Math.floor(rate * yieldMult);
+      stockpile.crops[crop] = (stockpile.crops[crop] || 0) + Math.floor(rate * cropMult);
     } else if (b.building_key === 'lumber_mill') {
-      stockpile.wood += Math.floor(rate * yieldMult);
+      stockpile.wood += Math.floor(rate * resourceMult);
     } else if (b.building_key === 'quarry') {
-      stockpile.stone += Math.floor(rate * yieldMult);
+      stockpile.stone += Math.floor(rate * resourceMult);
     }
   }
   return stockpile;
@@ -257,7 +274,8 @@ export function defaultUnitStats(): { atk: number; def: number; spd: number; luc
 export function rollPackLoot(
   pity: PityState,
   itemTypes: string | string[],
-  userId?: string
+  userId?: string,
+  thresholds?: PityThresholds
 ): {
   itemId: string;
   name: string;
@@ -266,7 +284,7 @@ export function rollPackLoot(
   item_type: string;
   newPity: PityState;
 } {
-  const { rarity, newPity } = rollRarity(pity, userId);
+  const { rarity, newPity } = rollRarity(pity, userId, thresholds);
   const types = Array.isArray(itemTypes) ? itemTypes : [itemTypes];
   let pool = LOOT_TABLE.filter((i) => types.includes(i.item_type) && i.rarity === rarity);
   if (pool.length === 0) pool = LOOT_TABLE.filter((i) => types.includes(i.item_type));
@@ -279,7 +297,7 @@ export function rollPackLoot(
   return { itemId: item.id, name: item.name, rarity, stats, item_type: item.item_type, newPity };
 }
 
-export function rollPackUnit(patron: Patron, pity: PityState, userId?: string): {
+export function rollPackUnit(patron: Patron, pity: PityState, userId?: string, thresholds?: PityThresholds): {
   unitKey: string;
   name: string;
   icon: string;
@@ -287,7 +305,7 @@ export function rollPackUnit(patron: Patron, pity: PityState, userId?: string): 
   stats: ReturnType<typeof defaultUnitStats>;
   newPity: PityState;
 } {
-  const { rarity, newPity } = rollRarity(pity, userId);
+  const { rarity, newPity } = rollRarity(pity, userId, thresholds);
   const pool = UNITS_BY_PATRON[patron];
   const unitDef = pool[Math.floor(Math.random() * pool.length)];
   const combat = defaultCombatStats(rarity);

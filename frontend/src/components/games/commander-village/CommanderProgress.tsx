@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore, useNotificationStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { api, playSound } from '../../../lib/api';
 import { COMMANDER_SKILLS, RARITY_COLORS } from './gameConfig';
 import { CommanderSkillTree } from './CommanderSkillTree';
 import type { GameState } from './CommanderVillage';
@@ -23,7 +23,7 @@ const SLOT_LABELS: Record<string, string> = {
 };
 
 export function CommanderProgress({ state, onUpdate }: { state: GameState; onUpdate: () => void }) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
   const notify = useNotificationStore((s) => s.show);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [equipping, setEquipping] = useState(false);
@@ -51,6 +51,7 @@ export function CommanderProgress({ state, onUpdate }: { state: GameState; onUpd
         body: JSON.stringify({ item_id: itemId }),
       }, token);
       notify(`Commander equipped (${res.bonus || res.slot})`, 'success');
+      playSound(user!.theme, 'craft');
       onUpdate();
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Equip failed', 'error');

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { userProfiles } from '../../../themes/copy';
 import { ResourcePicker, ResourceChips, type ResourceBundle } from './ResourcePicker';
@@ -27,6 +27,7 @@ function bundleHasContent(bundle: ResourceBundle & { item_ids?: string[] }): boo
 
 export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () => void }) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [trades, setTrades] = useState<Trade[]>([]);
   const [toUser, setToUser] = useState('edward');
   const [offer, setOffer] = useState<TradeBundle>({});
@@ -86,6 +87,9 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
         method: 'POST',
         body: JSON.stringify({ to_user: toUser, offer: o, request: r }),
       }, token);
+      playSound(user!.theme, 'craft');
+      const gift = hasOffer && !hasRequest;
+      notify(gift ? `Gift sent to ${toUser}!` : `Trade offer sent to ${toUser}!`, 'success');
       setOffer({});
       setRequest({});
       setOfferItems([]);
@@ -99,10 +103,15 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
   };
 
   const accept = async (id: string) => {
-    await api(`/game/trades/${id}/accept`, { method: 'POST' }, token);
-    playSound(user!.theme, 'craft');
-    fetch();
-    onUpdate();
+    try {
+      await api(`/game/trades/${id}/accept`, { method: 'POST' }, token);
+      playSound(user!.theme, 'complete');
+      notify('Trade accepted!', 'success');
+      fetch();
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Accept failed', 'error');
+    }
   };
 
   const others = ['aden', 'edward', 'jamie'].filter((u) => u !== user!.username);

@@ -39,11 +39,11 @@ export const XP_AWARDS: Record<string, number> = {
   duel_lose: 10,
 };
 
-export function unitCombatPower(stats: Record<string, unknown>): number {
+export function unitCombatPower(stats: Record<string, unknown>, troopMult = 1): number {
   const health = Number(stats.health ?? (Number(stats.def ?? 3) * 10));
   const damage = Number(stats.damage ?? stats.atk ?? 5);
   const shield = Number(stats.shield ?? Math.floor(Number(stats.def ?? 3) / 2) + 2);
-  return Math.floor(damage + shield + health / 10);
+  return Math.floor((damage + shield + health / 10) * troopMult);
 }
 
 export function rollDuelStakes(holdings: { gold: number; materials: number; food: number; faction_currency: number }) {
@@ -62,12 +62,13 @@ export function rollDuelStakes(holdings: { gold: number; materials: number; food
 
 export function applyZoneYield(
   cmd: { gold: number; materials: number; food: number; faction_currency: number },
-  zoneYield: Record<string, number>
+  zoneYield: Record<string, number>,
+  yieldMult = 1
 ): void {
-  if (zoneYield.gold) cmd.gold += zoneYield.gold;
-  if (zoneYield.materials) cmd.materials += zoneYield.materials;
-  if (zoneYield.food) cmd.food += zoneYield.food;
-  if (zoneYield.faction_currency) cmd.faction_currency += zoneYield.faction_currency;
+  if (zoneYield.gold) cmd.gold += Math.floor(zoneYield.gold * yieldMult);
+  if (zoneYield.materials) cmd.materials += Math.floor(zoneYield.materials * yieldMult);
+  if (zoneYield.food) cmd.food += Math.floor(zoneYield.food * yieldMult);
+  if (zoneYield.faction_currency) cmd.faction_currency += Math.floor(zoneYield.faction_currency * yieldMult);
 }
 
 export function deductCommanderResources(

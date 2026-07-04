@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useAuthStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, playSound } from '../../../lib/api';
 import { CROP_TYPES, ORE_TYPES } from './gameConfig';
 import { useCountdown, nextHourIso } from './useCountdown';
 import type { GameState } from './CommanderVillage';
@@ -11,20 +11,26 @@ interface MarketHubProps {
 }
 
 export function MarketHub({ state, onUpdate }: MarketHubProps) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [selling, setSelling] = useState<string | null>(null);
   const stockpile = state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 };
   const market = state.market;
 
   const sell = async (resourceType: string, amount: number) => {
+    if (amount <= 0) return;
     setSelling(resourceType);
     try {
-      await api('/game/sell', {
+      const res = await api<{ gold_earned?: number }>('/game/sell', {
         method: 'POST',
         body: JSON.stringify({ resource_type: resourceType, amount }),
       }, token);
+      playSound(user!.theme, 'complete');
+      notify(`Sold for ${res.gold_earned ?? '?'}🪙`, 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Sell failed', 'error');
+    }
     setSelling(null);
   };
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound, getRarityClass } from '../../../lib/api';
 import { RARITY_COLORS } from './gameConfig';
 import type { GameState } from './CommanderVillage';
@@ -11,6 +11,7 @@ interface PatrolRaidProps {
 
 export function PatrolRaid({ state, onUpdate }: PatrolRaidProps) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [drops, setDrops] = useState<Array<{ name: string; rarity: string }> | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
 
@@ -28,19 +29,30 @@ export function PatrolRaid({ state, onUpdate }: PatrolRaidProps) {
   }, [activePatrol]);
 
   const startPatrol = async () => {
-    await api('/game/patrol', { method: 'POST' }, token);
-    onUpdate();
+    try {
+      await api('/game/patrol', { method: 'POST' }, token);
+      playSound(user!.theme, 'buildPlace');
+      notify('Patrol launched — 30 seconds!', 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Patrol failed', 'error');
+    }
   };
 
   const claimPatrol = async () => {
     if (!activePatrol) return;
-    const res = await api<{ drops: Array<{ name: string; rarity: string }> }>(
-      `/game/patrol/${activePatrol.id}/claim`, { method: 'POST' }, token
-    );
-    setDrops(res.drops);
-    const hasLegendary = res.drops.some((d) => d.rarity === 'legendary' || d.rarity === 'mythic');
-    playSound(user!.theme, hasLegendary ? 'legendary' : 'craft');
-    onUpdate();
+    try {
+      const res = await api<{ drops: Array<{ name: string; rarity: string }> }>(
+        `/game/patrol/${activePatrol.id}/claim`, { method: 'POST' }, token
+      );
+      setDrops(res.drops);
+      const hasLegendary = res.drops.some((d) => d.rarity === 'legendary' || d.rarity === 'mythic');
+      playSound(user!.theme, hasLegendary ? 'legendary' : 'craft');
+      notify(`Patrol complete — ${res.drops.length} drop(s)!`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Claim failed', 'error');
+    }
   };
 
   return (

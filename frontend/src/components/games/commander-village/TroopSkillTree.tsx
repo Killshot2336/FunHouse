@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useAuthStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, playSound } from '../../../lib/api';
 import {
   SKILL_BRANCHES, SKILL_NODE_BONUS, skillNodeCost, normalizeCombatStats, type SkillBranch,
 } from './gameConfig';
@@ -19,7 +19,8 @@ const BRANCH_META: Record<SkillBranch, { label: string; icon: string; color: str
 };
 
 export function TroopSkillTree({ state, unitId, onUpdate }: TroopSkillTreeProps) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [unlocking, setUnlocking] = useState<string | null>(null);
   const unit = state.units.find((u) => u.id === unitId);
   if (!unit) return null;
@@ -35,8 +36,12 @@ export function TroopSkillTree({ state, unitId, onUpdate }: TroopSkillTreeProps)
         method: 'POST',
         body: JSON.stringify({ branch, node }),
       }, token);
+      playSound(user!.theme, 'craft');
+      notify(`${BRANCH_META[branch].label} node ${node} unlocked!`, 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Skill unlock failed', 'error');
+    }
     setUnlocking(null);
   };
 

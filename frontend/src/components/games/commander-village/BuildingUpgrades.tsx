@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useAuthStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, playSound } from '../../../lib/api';
 import type { GameState } from './CommanderVillage';
 
 interface BuildingUpgradesProps {
@@ -10,7 +10,8 @@ interface BuildingUpgradesProps {
 }
 
 export function BuildingUpgrades({ state, building, onUpdate }: BuildingUpgradesProps) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [upgrading, setUpgrading] = useState<number | null>(null);
 
   const meta = (building.building_meta_json || { upgrades: { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 } }) as {
@@ -25,8 +26,12 @@ export function BuildingUpgrades({ state, building, onUpdate }: BuildingUpgrades
         method: 'POST',
         body: JSON.stringify({ slot }),
       }, token);
+      playSound(user!.theme, 'buildPlace');
+      notify('Building upgrade installed!', 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Upgrade failed', 'error');
+    }
     setUpgrading(null);
   };
 

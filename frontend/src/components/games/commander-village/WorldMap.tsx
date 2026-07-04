@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
 import { ZONE_TYPES } from './gameConfig';
@@ -12,7 +12,7 @@ interface Zone {
   zone_type: string;
   owner_user_id: string | null;
   yield_json: Record<string, number>;
-  deployments?: Array<{ user_id: string; unit_count: number }>;
+  deployments?: Array<{ user_id: string; unit_count: number; deployed_power?: number }>;
 }
 
 interface WorldMapProps {
@@ -22,47 +22,74 @@ interface WorldMapProps {
 
 export function WorldMap({ state, onUpdate }: WorldMapProps) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const { triggerFlash, triggerShake } = useCinematicStore();
   const [zones, setZones] = useState<Zone[]>([]);
+  const [scoutRange, setScoutRange] = useState(false);
   const [selected, setSelected] = useState<Zone | null>(null);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
 
   useEffect(() => {
-    api<{ zones: Zone[] }>('/game/zones', {}, token).then((d) => setZones(d.zones));
+    api<{ zones: Zone[]; scout_range?: boolean }>('/game/zones', {}, token)
+      .then((d) => {
+        setZones(d.zones);
+        setScoutRange(!!d.scout_range);
+      })
+      .catch(() => notify('Failed to load world map', 'error'));
   }, [token, state]);
 
   const expandGrid = async () => {
-    await api('/game/expand-grid', { method: 'POST' }, token);
-    playSound(user!.theme, 'buildPlace');
-    onUpdate();
+    try {
+      const res = await api<{ cost?: number }>('/game/expand-grid', { method: 'POST' }, token);
+      playSound(user!.theme, 'buildPlace');
+      notify(`Village expanded! (-${res.cost ?? '?'}🪙)`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Expand failed', 'error');
+    }
   };
 
   const deploy = async () => {
     if (!selected || selectedUnits.length === 0) return;
-    await api(`/game/zones/${selected.id}/deploy`, {
-      method: 'POST',
-      body: JSON.stringify({ unit_ids: selectedUnits }),
-    }, token);
-    onUpdate();
-    setSelectedUnits([]);
+    try {
+      await api(`/game/zones/${selected.id}/deploy`, {
+        method: 'POST',
+        body: JSON.stringify({ unit_ids: selectedUnits }),
+      }, token);
+      playSound(user!.theme, 'craft');
+      notify('Troops deployed!', 'success');
+      onUpdate();
+      setSelectedUnits([]);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Deploy failed', 'error');
+    }
   };
 
   const attack = async () => {
     if (!selected || selectedUnits.length === 0) return;
-    const res = await api<{ won: boolean; atkPower: number; defPower: number }>(`/game/zones/${selected.id}/attack`, {
-      method: 'POST',
-      body: JSON.stringify({ unit_ids: selectedUnits }),
-    }, token);
-    if (res.won) {
-      triggerFlash('success');
-      playSound(user!.theme, 'missionComplete');
-    } else {
-      triggerFlash('damage');
-      triggerShake('heavy');
+    try {
+      const res = await api<{ won: boolean; atkPower: number; defPower: number }>(`/game/zones/${selected.id}/attack`, {
+        method: 'POST',
+        body: JSON.stringify({ unit_ids: selectedUnits }),
+      }, token);
+      if (res.won) {
+        triggerFlash('success');
+        playSound(user!.theme, 'missionComplete');
+        notify(`Zone captured! (${res.atkPower} vs ${res.defPower})`, 'success');
+      } else {
+        triggerFlash('damage');
+        triggerShake('heavy');
+        notify(`Attack failed (${res.atkPower} vs ${res.defPower})`, 'error');
+      }
+      onUpdate();
+      api<{ zones: Zone[]; scout_range?: boolean }>('/game/zones', {}, token).then((d) => {
+        setZones(d.zones);
+        setScoutRange(!!d.scout_range);
+      });
+      setSelectedUnits([]);
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Attack failed', 'error');
     }
-    onUpdate();
-    api<{ zones: Zone[] }>('/game/zones', {}, token).then((d) => setZones(d.zones));
-    setSelectedUnits([]);
   };
 
   const toggleUnit = (id: string) => {
@@ -71,6 +98,10 @@ export function WorldMap({ state, onUpdate }: WorldMapProps) {
 
   const zoneInfo = selected ? ZONE_TYPES[selected.zone_type] : null;
   const ownerColors: Record<string, string> = { aden: '#39ff14', edward: '#3b82f6', jamie: '#a855f7' };
+  const enemyDeploy = selected?.deployments?.find((d) => d.user_id !== user?.username);
+  const enemyPowerHint = scoutRange && enemyDeploy?.deployed_power != null
+    ? `~${enemyDeploy.deployed_power} power`
+    : '???';
 
   return (
     <div className="space-y-4">
@@ -121,7 +152,7 @@ export function WorldMap({ state, onUpdate }: WorldMapProps) {
               <p className="text-xs opacity-50">
                 Yield/hr: {Object.entries(selected.yield_json).map(([k, v]) => `${v} ${k}`).join(', ')}
               </p>
-              <p className="text-xs opacity-50">Owner: {selected.owner_user_id || 'Unclaimed'} · Enemy troops: ???</p>
+              <p className="text-xs opacity-50">Owner: {selected.owner_user_id || 'Unclaimed'} · Enemy: {enemyPowerHint}</p>
             </div>
             <button onClick={() => setSelected(null)} className="text-xs opacity-50">✕</button>
           </div>

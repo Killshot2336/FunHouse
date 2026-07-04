@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { COSMETIC_OPTIONS } from './gameConfig';
 import { TroopCard } from './TroopCard';
@@ -21,24 +21,34 @@ function getEquippedLabel(unit: GameState['units'][0], inventory: GameState['inv
 
 export function ArmyRoster({ state, onUpdate }: ArmyRosterProps) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [selectedUnit, setSelectedUnit] = useState<string | null>(null);
 
   const recruit = async (unitKey: string) => {
+    const def = state.config.units.find((u) => u.key === unitKey);
     try {
       await api('/game/recruit', { method: 'POST', body: JSON.stringify({ unit_key: unitKey }) }, token);
       playSound(user!.theme, 'craft');
+      notify(`Recruited ${def?.name || unitKey}!`, 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Recruit failed', 'error');
+    }
   };
 
   const updateCosmetic = async (unitId: string, key: string, value: string) => {
     const unit = state.units.find((u) => u.id === unitId);
     if (!unit) return;
-    await api(`/game/units/${unitId}/cosmetics`, {
-      method: 'PATCH',
-      body: JSON.stringify({ cosmetics: { ...unit.cosmetics, [key]: value } }),
-    }, token);
-    onUpdate();
+    try {
+      await api(`/game/units/${unitId}/cosmetics`, {
+        method: 'PATCH',
+        body: JSON.stringify({ cosmetics: { ...unit.cosmetics, [key]: value } }),
+      }, token);
+      notify(`${key} updated`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Cosmetic update failed', 'error');
+    }
   };
 
   const unitDef = (key: string) => state.config.units.find((u) => u.key === key);
@@ -58,7 +68,7 @@ export function ArmyRoster({ state, onUpdate }: ArmyRosterProps) {
       </div>
 
       <div>
-        <h3 className="text-sm font-bold mb-2">Your Army ({state.units.length}/6)</h3>
+        <h3 className="text-sm font-bold mb-2">Your Army ({state.units.length})</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {state.units.map((unit) => {
             const def = unitDef(unit.unit_key);

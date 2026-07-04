@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, getRarityClass, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
 import { PACK_TYPES, RARITY_LABELS, RARITY_COLORS, type PackType, type Rarity } from './gameConfig';
@@ -31,6 +31,8 @@ interface PackResult {
   refund?: number;
 }
 
+type RevealPhase = 'idle' | 'shaking' | 'reveal' | 'result';
+
 const CATEGORY_LABELS: Record<string, string> = {
   troop: 'Troops',
   weapon: 'Weapons',
@@ -51,33 +53,58 @@ function canAfford(state: GameState, cost: Record<string, number>) {
   return true;
 }
 
+function resultLabel(res: PackResult): string {
+  if (res.full) return `Army full — refunded ${res.refund}🪙`;
+  const name = res.inventory_item?.name || res.roll.name;
+  return `${name} (${RARITY_LABELS[res.roll.rarity]})`;
+}
+
 export function PackShop({ state, onUpdate }: PackShopProps) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const { triggerFlash, burst } = useCinematicStore();
   const [opening, setOpening] = useState<PackType | null>(null);
+  const [phase, setPhase] = useState<RevealPhase>('idle');
   const [result, setResult] = useState<PackResult | null>(null);
   const [filter, setFilter] = useState<string>('all');
 
   const openPack = async (packType: PackType) => {
     setOpening(packType);
+    setPhase('shaking');
     setResult(null);
     try {
+      await new Promise((r) => setTimeout(r, 500));
       const res = await api<PackResult>('/game/packs/open', {
         method: 'POST',
         body: JSON.stringify({ pack_type: packType }),
       }, token);
-      setResult(res);
+
       const rarity = res.roll.rarity;
+      setPhase('reveal');
+      playSound(user!.theme, rarity === 'legendary' || rarity === 'mythic' ? 'legendary' : 'craft');
+
+      await new Promise((r) => setTimeout(r, 700));
+
+      setResult(res);
+      setPhase('result');
+
       if (rarity === 'legendary' || rarity === 'mythic') {
         triggerFlash('legendary');
-        playSound(user!.theme, 'legendary');
+        burst(50, 50, 24);
+      } else if (rarity === 'epic' || rarity === 'rare') {
+        triggerFlash('success');
+        burst(50, 50, 12);
       } else {
         triggerFlash('success');
-        playSound(user!.theme, 'craft');
       }
-      burst(50, 50, 16);
+
+      notify(`Pulled: ${resultLabel(res)}`, 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Pack open failed', 'error');
+      setPhase('idle');
+      setResult(null);
+    }
     setOpening(null);
   };
 
@@ -85,6 +112,7 @@ export function PackShop({ state, onUpdate }: PackShopProps) {
     .filter(([, p]) => filter === 'all' || p.category === filter);
 
   const categories = ['all', 'troop', 'weapon', 'armor', 'mixed'];
+  const isRevealing = phase === 'shaking' || phase === 'reveal';
 
   return (
     <div className="space-y-4">
@@ -109,69 +137,108 @@ export function PackShop({ state, onUpdate }: PackShopProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {packs.map(([key, pack]) => {
-          const affordable = canAfford(state, pack.cost);
-          const isOpening = opening === key;
-          const categoryColor =
-            pack.category === 'weapon' ? 'from-red-500/20' :
-            pack.category === 'armor' ? 'from-blue-500/20' :
-            pack.category === 'mixed' ? 'from-amber-500/20' : 'from-green-500/20';
-
-          return (
-            <motion.button
-              key={key}
-              onClick={() => openPack(key)}
-              disabled={!!opening || !affordable}
-              whileHover={affordable ? { scale: 1.02 } : undefined}
-              whileTap={affordable ? { scale: 0.98 } : undefined}
-              className={`relative overflow-hidden theme-card p-4 text-left transition-all ${
-                !affordable ? 'opacity-40' : 'hover:shadow-lg'
-              }`}
+      <AnimatePresence>
+        {isRevealing && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="theme-card p-8 text-center relative overflow-hidden min-h-[200px] flex flex-col items-center justify-center"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-600/20 via-transparent to-amber-500/20 pointer-events-none" />
+            <motion.div
+              animate={phase === 'shaking' ? { rotate: [-3, 3, -3, 3, 0], scale: [1, 1.05, 1, 1.05, 1] } : { rotateY: [0, 90, 180] }}
+              transition={{ duration: phase === 'shaking' ? 0.5 : 0.7, ease: 'easeInOut' }}
+              className="text-6xl mb-3 relative"
             >
-              <div className={`absolute inset-0 bg-gradient-to-br ${categoryColor} to-transparent pointer-events-none`} />
-              <div className="relative flex items-start justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-3xl drop-shadow">{pack.icon}</span>
-                  <div>
-                    <div className="font-bold text-sm">{pack.name}</div>
-                    <div className="text-[10px] uppercase opacity-40 tracking-wide">{pack.category}</div>
-                    <div className="text-xs opacity-60 mt-0.5 line-clamp-2">{pack.desc}</div>
+              {phase === 'shaking' ? '📦' : '✨'}
+            </motion.div>
+            <p className="text-sm font-bold animate-pulse relative">
+              {phase === 'shaking' ? 'Opening pack...' : 'Revealing...'}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {!isRevealing && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {packs.map(([key, pack]) => {
+            const affordable = canAfford(state, pack.cost);
+            const isOpening = opening === key;
+            const categoryColor =
+              pack.category === 'weapon' ? 'from-red-500/20' :
+              pack.category === 'armor' ? 'from-blue-500/20' :
+              pack.category === 'mixed' ? 'from-amber-500/20' : 'from-green-500/20';
+
+            return (
+              <motion.button
+                key={key}
+                onClick={() => openPack(key)}
+                disabled={!!opening || !affordable}
+                whileHover={affordable ? { scale: 1.02 } : undefined}
+                whileTap={affordable ? { scale: 0.98 } : undefined}
+                className={`relative overflow-hidden theme-card p-4 text-left transition-all ${
+                  !affordable ? 'opacity-40' : 'hover:shadow-lg'
+                }`}
+              >
+                <div className={`absolute inset-0 bg-gradient-to-br ${categoryColor} to-transparent pointer-events-none`} />
+                <div className="relative flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <span className="text-3xl drop-shadow">{pack.icon}</span>
+                    <div>
+                      <div className="font-bold text-sm">{pack.name}</div>
+                      <div className="text-[10px] uppercase opacity-40 tracking-wide">{pack.category}</div>
+                      <div className="text-xs opacity-60 mt-0.5 line-clamp-2">{pack.desc}</div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-bold">{formatCost(pack.cost)}</div>
+                    <div className={`mt-2 text-xs px-2 py-1 rounded ${
+                      isOpening ? 'animate-pulse bg-current/20' : 'theme-btn theme-btn-primary'
+                    }`}>
+                      {isOpening ? '...' : 'OPEN'}
+                    </div>
                   </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-bold">{formatCost(pack.cost)}</div>
-                  <div className={`mt-2 text-xs px-2 py-1 rounded ${
-                    isOpening ? 'animate-pulse bg-current/20' : 'theme-btn theme-btn-primary'
-                  }`}>
-                    {isOpening ? '...' : 'OPEN'}
-                  </div>
-                </div>
-              </div>
-            </motion.button>
-          );
-        })}
-      </div>
+              </motion.button>
+            );
+          })}
+        </div>
+      )}
 
       <AnimatePresence>
-        {result && (
+        {result && phase === 'result' && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.85, y: 20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
+            initial={{ opacity: 0, scale: 0.5, rotateY: 90 }}
+            animate={{ opacity: 1, scale: 1, rotateY: 0 }}
             exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 20 }}
             className="space-y-3"
           >
             <div className="theme-card p-4 text-center relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-t from-current/5 to-transparent pointer-events-none" />
-              <div className="text-xs uppercase tracking-widest opacity-50 mb-2">You pulled</div>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: [0, 1.2, 1] }}
+                transition={{ duration: 0.5 }}
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background: `radial-gradient(circle at center, ${RARITY_COLORS[result.roll.rarity]}33 0%, transparent 70%)`,
+                }}
+              />
+              <div className="text-xs uppercase tracking-widest opacity-50 mb-2 relative">You pulled</div>
 
               {result.full ? (
-                <div className="text-sm">
+                <div className="text-sm relative">
                   Army full! Refunded {result.refund}🪙 — pulled {result.roll.name} ({RARITY_LABELS[result.roll.rarity]})
                 </div>
               ) : result.result_type === 'item' || result.inventory_item ? (
-                <div className={`inline-block p-4 rounded-lg border-2 ${getRarityClass(result.roll.rarity)}`}
-                  style={{ borderColor: RARITY_COLORS[result.roll.rarity] }}>
+                <motion.div
+                  initial={{ y: 20, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ delay: 0.15 }}
+                  className={`inline-block p-4 rounded-lg border-2 ${getRarityClass(result.roll.rarity)}`}
+                  style={{ borderColor: RARITY_COLORS[result.roll.rarity] }}
+                >
                   <div className="text-2xl mb-1">🎁</div>
                   <div className="font-bold">{result.inventory_item?.name || result.roll.name}</div>
                   <div className="text-xs uppercase mt-1" style={{ color: RARITY_COLORS[result.roll.rarity] }}>
@@ -185,17 +252,24 @@ export function PackShop({ state, onUpdate }: PackShopProps) {
                     </div>
                   )}
                   <p className="text-[10px] opacity-50 mt-2">Added to Inventory — equip or trade it!</p>
-                </div>
+                </motion.div>
               ) : (
-                <TroopCard
-                  name={result.roll.name}
-                  icon={result.roll.icon || '⚔️'}
-                  rarity={result.roll.rarity}
-                  stats={result.roll.stats}
-                />
+                <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.15 }}>
+                  <TroopCard
+                    name={result.roll.name}
+                    icon={result.roll.icon || '⚔️'}
+                    rarity={result.roll.rarity}
+                    stats={result.roll.stats}
+                  />
+                </motion.div>
               )}
             </div>
-            <button onClick={() => setResult(null)} className="theme-btn w-full text-xs">Pull Again</button>
+            <button
+              onClick={() => { setResult(null); setPhase('idle'); }}
+              className="theme-btn w-full text-xs"
+            >
+              Pull Again
+            </button>
           </motion.div>
         )}
       </AnimatePresence>

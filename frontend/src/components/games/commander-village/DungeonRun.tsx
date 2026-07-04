@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
 import { useCountdown, nextDungeonResetIso } from './useCountdown';
@@ -25,6 +25,7 @@ interface DungeonRunProps {
 
 export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const { triggerFlash } = useCinematicStore();
   const [dungeon, setDungeon] = useState<DungeonState | null>(null);
   const [claiming, setClaiming] = useState(false);
@@ -39,20 +40,32 @@ export function DungeonRun({ state, onUpdate }: DungeonRunProps) {
   const { label: countdownLabel } = useCountdown(resetTarget);
 
   const enter = async () => {
-    await api('/game/dungeon/enter', { method: 'POST' }, token);
-    fetchDungeon();
-    onUpdate();
+    try {
+      await api('/game/dungeon/enter', { method: 'POST' }, token);
+      playSound(user!.theme, 'buildPlace');
+      notify('Entered the dungeon!', 'success');
+      fetchDungeon();
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Enter failed', 'error');
+    }
   };
 
   const claim = async () => {
     setClaiming(true);
     try {
-      const res = await api<{ completed: boolean }>('/game/dungeon/claim', { method: 'POST' }, token);
-      triggerFlash(res.completed ? 'success' : 'legendary');
+      const res = await api<{ completed: boolean; loot?: { name?: string } }>('/game/dungeon/claim', { method: 'POST' }, token);
+      triggerFlash(res.completed ? 'legendary' : 'success');
       playSound(user!.theme, 'missionComplete');
+      notify(
+        res.completed ? 'Dungeon cleared!' : `Loot: ${res.loot?.name || 'item'} claimed`,
+        'success'
+      );
       fetchDungeon();
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Claim failed', 'error');
+    }
     setClaiming(false);
   };
 

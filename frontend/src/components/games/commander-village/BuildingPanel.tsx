@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { useAuthStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, playSound } from '../../../lib/api';
 import { BUILDINGS, BUILDING_COSTS, buildingCost, getUnlockedCrops, CROP_TYPES } from './gameConfig';
 import { BuildingUpgrades } from './BuildingUpgrades';
 import { formatMinSec } from './productionFormat';
@@ -33,7 +33,8 @@ interface BuildingPanelProps {
 export function BuildingPanel({
   state, x, y, liveAmount, ratePerMin, elapsedSec, onUpdate, onLevelUpgrade, onClose, upgrading,
 }: BuildingPanelProps) {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [collecting, setCollecting] = useState(false);
   const building = state.buildings.find((b) => b.grid_x === x && b.grid_y === y);
 
@@ -71,8 +72,12 @@ export function BuildingPanel({
         method: 'POST',
         body: JSON.stringify({ crop }),
       }, token);
+      const cropName = CROP_TYPES.find((c) => c.key === crop)?.name || crop;
+      notify(`Now growing ${cropName}`, 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Crop change failed', 'error');
+    }
   };
 
   const collectMine = async () => {
@@ -82,8 +87,12 @@ export function BuildingPanel({
         method: 'POST',
         body: JSON.stringify({ building_id: building.id }),
       }, token);
+      playSound(user!.theme, 'craft');
+      notify('Ores collected!', 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Mine collect failed', 'error');
+    }
     setCollecting(false);
   };
 

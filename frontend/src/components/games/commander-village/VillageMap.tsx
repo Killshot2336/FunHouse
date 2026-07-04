@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { BUILDINGS, BUILDING_COSTS, buildingCost } from './gameConfig';
 import { BuildingPanel } from './BuildingPanel';
@@ -20,6 +20,7 @@ interface VillageMapProps {
 
 export function VillageMap({ state, onUpdate }: VillageMapProps) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [selectedBuilding, setSelectedBuilding] = useState('farm');
   const [selectedTile, setSelectedTile] = useState<{ x: number; y: number } | null>(null);
   const [placing, setPlacing] = useState(false);
@@ -61,9 +62,13 @@ export function VillageMap({ state, onUpdate }: VillageMapProps) {
           grid_y: y,
         }),
       }, token);
+      const bldName = BUILDINGS[existing?.building_key || selectedBuilding]?.name || 'Building';
       playSound(user!.theme, 'buildPlace');
+      notify(existing ? `${bldName} upgraded!` : `${bldName} built!`, 'success');
       onUpdate();
-    } catch { /* ignore */ }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Build failed', 'error');
+    }
     setPlacing(false);
   };
 

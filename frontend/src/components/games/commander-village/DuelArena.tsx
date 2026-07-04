@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
 import { userProfiles } from '../../../themes/copy';
@@ -27,6 +27,7 @@ const RESOURCE_ICONS: Record<string, string> = {
 
 export function DuelArena({ onUpdate }: { onUpdate: () => void }) {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const { triggerFlash, triggerShake, burst } = useCinematicStore();
   const [duels, setDuels] = useState<Duel[]>([]);
   const [opponent, setOpponent] = useState('edward');
@@ -40,26 +41,38 @@ export function DuelArena({ onUpdate }: { onUpdate: () => void }) {
   useEffect(() => { fetchDuels(); }, [token]);
 
   const challenge = async () => {
-    await api('/game/duels/challenge', {
-      method: 'POST',
-      body: JSON.stringify({ opponent }),
-    }, token);
-    fetchDuels();
+    try {
+      await api('/game/duels/challenge', {
+        method: 'POST',
+        body: JSON.stringify({ opponent }),
+      }, token);
+      playSound(user!.theme, 'notification');
+      notify(`Duel sent to ${opponent}!`, 'success');
+      fetchDuels();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Challenge failed', 'error');
+    }
   };
 
   const accept = async (id: string) => {
-    const res = await api<DuelResult>(`/game/duels/${id}/accept`, { method: 'POST' }, token);
-    setResult(res);
-    if (res.winner_id === user!.username) {
-      triggerFlash('legendary');
-      burst(50, 50, 20);
-      playSound(user!.theme, 'legendary');
-    } else {
-      triggerFlash('damage');
-      triggerShake('heavy');
+    try {
+      const res = await api<DuelResult>(`/game/duels/${id}/accept`, { method: 'POST' }, token);
+      setResult(res);
+      if (res.winner_id === user!.username) {
+        triggerFlash('legendary');
+        burst(50, 50, 20);
+        playSound(user!.theme, 'legendary');
+        notify('You won the duel!', 'success');
+      } else {
+        triggerFlash('damage');
+        triggerShake('heavy');
+        notify('You lost the duel', 'error');
+      }
+      fetchDuels();
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Duel failed', 'error');
     }
-    fetchDuels();
-    onUpdate();
   };
 
   const others = ['aden', 'edward', 'jamie'].filter((u) => u !== user!.username);

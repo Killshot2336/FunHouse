@@ -64,6 +64,13 @@ import {
   parseStockpile,
 } from '../lib/economyEngine.js';
 import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from '../lib/progressEngine.js';
+import {
+  getCommanderBonuses,
+  maxArmySlots,
+  scaleOreMap,
+  scaleItemStats,
+  type CommanderBonuses,
+} from '../lib/commanderSkills.js';
 import { awardXpDemo, awardXpLive } from './progress.js';
 import * as gameDb from '../lib/gameSupabase.js';
 import {
@@ -77,6 +84,30 @@ import {
   sanitizeTradeBundle,
   HOUSE_USERS,
 } from '../lib/tradeResources.js';
+
+function loadBonusesDemo(store: ReturnType<typeof getDemoStore>, userId: string): CommanderBonuses {
+  const p = store.profileProgress.find((x) => x.user_id === userId);
+  return getCommanderBonuses(p?.sp_spent_json || []);
+}
+
+function pityThresholds(b: CommanderBonuses) {
+  return { rare: b.pityRareAt, legendary: b.pityLegendaryAt };
+}
+
+function applyTradeReceiveBonusDemo(
+  cmd: CommanderResources,
+  received: TradeResources,
+  bonuses: CommanderBonuses
+): CommanderResources {
+  if (bonuses.tradeValue <= 1) return cmd;
+  const extra = bonuses.tradeValue - 1;
+  return {
+    gold: cmd.gold + Math.floor((received.gold || 0) * extra),
+    materials: cmd.materials + Math.floor((received.materials || 0) * extra),
+    food: cmd.food + Math.floor((received.food || 0) * extra),
+    faction_currency: cmd.faction_currency + Math.floor((received.faction_currency || 0) * extra),
+  };
+}
 
 const router = Router();
 router.use(authMiddleware);
@@ -122,8 +153,15 @@ function refreshPower(store: ReturnType<typeof getDemoStore>, userId: string) {
 function applyOffline(store: ReturnType<typeof getDemoStore>, userId: string) {
   const cmd = getOrCreateCommander(store, userId);
   const buildings = store.gameBuildings.filter((b) => b.user_id === userId);
+  const bonuses = loadBonusesDemo(store, userId);
   const offline = calcOfflineResources(buildings, cmd.last_seen_at);
-  const stockpileAccrual = calcStockpileAccrual(buildings, cmd.last_seen_at);
+  const stockpileAccrual = calcStockpileAccrual(
+    buildings,
+    cmd.last_seen_at,
+    8,
+    bonuses.farmYield,
+    bonuses.cropSpeed
+  );
   cmd.gold += offline.gold;
   cmd.materials += offline.materials;
   cmd.food += offline.food;
@@ -275,10 +313,13 @@ router.post('/recruit', async (req: Request, res: Response) => {
     if (!unitDef) return res.status(400).json({ error: 'Invalid unit' });
 
     const units = store.gameUnits.filter((u) => u.user_id === user.username);
-    if (units.length >= 6) return res.status(400).json({ error: 'Army full (max 6)' });
-    if (cmd.gold < unitDef.baseCost) return res.status(400).json({ error: 'Not enough gold' });
+    const bonuses = loadBonusesDemo(store, user.username);
+    const maxSlots = maxArmySlots(bonuses);
+    if (units.length >= maxSlots) return res.status(400).json({ error: `Army full (max ${maxSlots})` });
+    const cost = Math.max(1, Math.floor(unitDef.baseCost * bonuses.recruitDiscount));
+    if (cmd.gold < cost) return res.status(400).json({ error: 'Not enough gold' });
 
-    cmd.gold -= unitDef.baseCost;
+    cmd.gold -= cost;
     const slot = units.length;
     const unit = {
       id: uuid(),
@@ -396,10 +437,12 @@ router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
     let pity = store.gamePity.find((p) => p.user_id === user.username);
     if (!pity) { pity = { user_id: user.username, rolls_since_rare: 0, rolls_since_legendary: 0 }; store.gamePity.push(pity); }
 
+    const bonuses = loadBonusesDemo(store, user.username);
+    const thresholds = pityThresholds(bonuses);
     const drops = [];
-    const numRolls = 1 + Math.floor(Math.random() * 2);
+    const numRolls = 1 + Math.floor(Math.random() * 2) + bonuses.patrolExtraRolls;
     for (let i = 0; i < numRolls; i++) {
-      const { item, newPity } = rollLoot(pity, user.username);
+      const { item, newPity } = rollLoot(pity, user.username, thresholds);
       pity.rolls_since_rare = newPity.rolls_since_rare;
       pity.rolls_since_legendary = newPity.rolls_since_legendary;
       const inv = {
@@ -572,7 +615,7 @@ router.post('/inventory/:id/sell', async (req: Request, res: Response) => {
     const item = store.gameInventory[idx];
     if (item.equipped_to_unit) return res.status(400).json({ error: 'Unequip first' });
 
-    const price = itemSellPrice(item.item_id, item.rarity);
+    const price = Math.floor(itemSellPrice(item.item_id, item.rarity) * loadBonusesDemo(store, user.username).marketSell);
     const cmd = getOrCreateCommander(store, user.username);
     cmd.gold += price;
     store.gameInventory.splice(idx, 1);
@@ -713,11 +756,15 @@ router.post('/trades/:id/accept', async (req: Request, res: Response) => {
     }
 
     const finalFrom = applyResourceDelta(applyResourceDelta(fromCmd, offer, -1), request, 1);
-    const finalTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
-    fromCmd.gold = finalFrom.gold;
-    fromCmd.materials = finalFrom.materials;
-    fromCmd.food = finalFrom.food;
-    fromCmd.faction_currency = finalFrom.faction_currency;
+    let finalTo = applyResourceDelta(applyResourceDelta(toCmd, request, -1), offer, 1);
+    const toBonuses = loadBonusesDemo(store, trade.to_user);
+    const fromBonuses = loadBonusesDemo(store, trade.from_user);
+    finalTo = applyTradeReceiveBonusDemo(finalTo, offer, toBonuses);
+    const finalFromWithBonus = applyTradeReceiveBonusDemo(finalFrom, request, fromBonuses);
+    fromCmd.gold = finalFromWithBonus.gold;
+    fromCmd.materials = finalFromWithBonus.materials;
+    fromCmd.food = finalFromWithBonus.food;
+    fromCmd.faction_currency = finalFromWithBonus.faction_currency;
     toCmd.gold = finalTo.gold;
     toCmd.materials = finalTo.materials;
     toCmd.food = finalTo.food;
@@ -798,11 +845,14 @@ router.post('/packs/open', async (req: Request, res: Response) => {
     let pity = store.gamePity.find((p) => p.user_id === user.username);
     if (!pity) { pity = { user_id: user.username, rolls_since_rare: 0, rolls_since_legendary: 0 }; store.gamePity.push(pity); }
 
+    const bonuses = loadBonusesDemo(store, user.username);
+    const thresholds = pityThresholds(bonuses);
+    const maxSlots = maxArmySlots(bonuses);
     const pullTroop = category === 'troop' || (category === 'mixed' && Math.random() < 0.35);
 
     if (!pullTroop) {
       const itemTypes = category === 'weapon' ? 'weapon' : category === 'armor' ? 'armor' : ['weapon', 'armor', 'relic'];
-      const rolled = rollPackLoot(pity, itemTypes, user.username);
+      const rolled = rollPackLoot(pity, itemTypes, user.username, thresholds);
       pity.rolls_since_rare = rolled.newPity.rolls_since_rare;
       pity.rolls_since_legendary = rolled.newPity.rolls_since_legendary;
       const inv = {
@@ -821,12 +871,12 @@ router.post('/packs/open', async (req: Request, res: Response) => {
       return res.json({ result_type: 'item', inventory_item: inv, roll: rolled, commander: cmd, pity });
     }
 
-    const rolled = rollPackUnit(cmd.patron as Patron, pity, user.username);
+    const rolled = rollPackUnit(cmd.patron as Patron, pity, user.username, thresholds);
     pity.rolls_since_rare = rolled.newPity.rolls_since_rare;
     pity.rolls_since_legendary = rolled.newPity.rolls_since_legendary;
 
     const units = store.gameUnits.filter((u) => u.user_id === user.username);
-    if (units.length >= 6) {
+    if (units.length >= maxSlots) {
       cmd.gold += 50;
       awardXpDemo(store, user.username, 'pack_open');
       return res.json({ result_type: 'troop', full: true, refund: 50, roll: rolled, commander: cmd, pity });
@@ -935,7 +985,8 @@ router.post('/expand-grid', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     if (cmd.grid_size >= 16) return res.status(400).json({ error: 'Max grid size reached' });
-    const cost = expandGridCost(cmd.grid_size);
+    const bonuses = loadBonusesDemo(store, user.username);
+    const cost = Math.max(1, Math.floor(expandGridCost(cmd.grid_size) * bonuses.gridDiscount));
     if (cmd.gold < cost) return res.status(400).json({ error: 'Not enough gold' });
     cmd.gold -= cost;
     cmd.grid_size += 2;
@@ -953,15 +1004,16 @@ router.get('/zones', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
+    const bonuses = loadBonusesDemo(store, user.username);
     const zones = store.gameZones.map((z) => ({
       ...z,
       deployments: store.gameZoneDeployments.filter((d) => d.zone_id === z.id).map((d) => ({
         user_id: d.user_id,
         unit_count: d.unit_ids.length,
+        ...(bonuses.scoutRange && d.user_id !== user.username ? { deployed_power: d.deployed_power } : {}),
       })),
-      hidden_power: true,
     }));
-    return res.json({ zones, zone_types: ZONE_TYPES });
+    return res.json({ zones, zone_types: ZONE_TYPES, scout_range: bonuses.scoutRange });
   }
   try {
     const result = await gameDb.getZones(supabase, user.username);
@@ -980,7 +1032,11 @@ router.post('/zones/:id/deploy', async (req: Request, res: Response) => {
     if (!zone) return res.status(404).json({ error: 'Zone not found' });
     const units = store.gameUnits.filter((u) => unit_ids.includes(u.id) && u.user_id === user.username);
     if (units.length !== unit_ids.length) return res.status(400).json({ error: 'Invalid units' });
-    const power = units.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    const bonuses = loadBonusesDemo(store, user.username);
+    const power = Math.floor(units.reduce(
+      (s, u) => s + unitCombatPower(u.stats as Record<string, unknown>, bonuses.troopStats),
+      0
+    ));
     store.gameZoneDeployments = store.gameZoneDeployments.filter((d) => !(d.zone_id === zoneId && d.user_id === user.username));
     store.gameZoneDeployments.push({ id: uuid(), zone_id: zoneId, user_id: user.username, unit_ids, deployed_power: power });
     return res.json({ deployed: true, power });
@@ -1001,7 +1057,11 @@ router.post('/zones/:id/attack', async (req: Request, res: Response) => {
     const zone = store.gameZones.find((z) => z.id === zoneId);
     if (!zone) return res.status(404).json({ error: 'Zone not found' });
     const atkUnits = store.gameUnits.filter((u) => unit_ids.includes(u.id) && u.user_id === user.username);
-    const atkPower = atkUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    const bonuses = loadBonusesDemo(store, user.username);
+    const atkPower = atkUnits.reduce(
+      (s, u) => s + unitCombatPower(u.stats as Record<string, unknown>, bonuses.troopStats),
+      0
+    );
     const defDeployments = store.gameZoneDeployments.filter((d) => d.zone_id === zoneId && d.user_id !== user.username);
     const defPower = defDeployments.reduce((s, d) => s + d.deployed_power, 0);
     const variance = 0.95 + Math.random() * 0.1;
@@ -1014,7 +1074,7 @@ router.post('/zones/:id/attack', async (req: Request, res: Response) => {
         store.gameZoneDeployments = store.gameZoneDeployments.filter((x) => x.id !== d.id);
       }
       const cmd = getOrCreateCommander(store, user.username);
-      applyZoneYield(cmd, zone.yield_json);
+      applyZoneYield(cmd, zone.yield_json, bonuses.zoneYield);
       store.gameZoneDeployments.push({ id: uuid(), zone_id: zoneId, user_id: user.username, unit_ids, deployed_power: atkPower });
       awardXpDemo(store, user.username, 'zone_capture');
       return res.json({ won: true, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), zone });
@@ -1079,8 +1139,18 @@ router.post('/duels/:id/accept', async (req: Request, res: Response) => {
 
     const chUnits = store.gameUnits.filter((u) => u.user_id === duel.challenger_id);
     const defUnits = store.gameUnits.filter((u) => u.user_id === duel.defender_id);
-    const chPower = applyHiddenDuelLuck(duel.challenger_id, chUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0));
-    const defPower = applyHiddenDuelLuck(duel.defender_id, defUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0));
+    const chBonuses = loadBonusesDemo(store, duel.challenger_id);
+    const defBonuses = loadBonusesDemo(store, duel.defender_id);
+    let chPower = chUnits.reduce(
+      (s, u) => s + unitCombatPower(u.stats as Record<string, unknown>, chBonuses.troopStats),
+      0
+    );
+    let defPower = defUnits.reduce(
+      (s, u) => s + unitCombatPower(u.stats as Record<string, unknown>, defBonuses.troopStats),
+      0
+    );
+    chPower = applyHiddenDuelLuck(duel.challenger_id, chPower * chBonuses.duelLuck);
+    defPower = applyHiddenDuelLuck(duel.defender_id, defPower * defBonuses.duelLuck);
     const variance = 0.95 + Math.random() * 0.1;
     const challengerWins = chPower * variance > defPower;
 
@@ -1126,6 +1196,7 @@ router.post('/sell', async (req: Request, res: Response) => {
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
+    const bonuses = loadBonusesDemo(store, user.username);
     const stockpile = parseStockpile(cmd.stockpile_json);
     const hourSeed = Math.floor(Date.now() / 3600000);
     const cropPrices = getCropPrices(hourSeed);
@@ -1136,12 +1207,12 @@ router.post('/sell', async (req: Request, res: Response) => {
       const avail = stockpile.crops[resource_type] || 0;
       if (avail < amount) return res.status(400).json({ error: 'Not enough crops' });
       stockpile.crops[resource_type] = avail - amount;
-      goldEarned = cropPrices[resource_type] * amount;
+      goldEarned = Math.floor(cropPrices[resource_type] * amount * bonuses.marketSell);
     } else if (orePrices[resource_type] !== undefined) {
       const avail = stockpile.ores[resource_type] || 0;
       if (avail < amount) return res.status(400).json({ error: 'Not enough ores' });
       stockpile.ores[resource_type] = avail - amount;
-      goldEarned = orePrices[resource_type] * amount;
+      goldEarned = Math.floor(orePrices[resource_type] * amount * bonuses.marketSell);
     } else {
       return res.status(400).json({ error: 'Unknown resource type' });
     }
@@ -1233,7 +1304,11 @@ router.post('/mine/collect', async (req: Request, res: Response) => {
     const smithy = store.gameBuildings.find((b) => b.user_id === user.username && b.building_key === 'smithy');
     const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || {};
     const pickaxeTier = getPickaxeTier(smithyUpgrades, cmd.pickaxe_tier || 1);
-    const ores = rollOres(pickaxeTier, building.level + (meta.upgrades?.['1'] || 0), Date.now());
+    const bonuses = loadBonusesDemo(store, user.username);
+    const ores = scaleOreMap(
+      rollOres(pickaxeTier, building.level + (meta.upgrades?.['1'] || 0), Date.now()),
+      bonuses.mineYield
+    );
     const stockpile = parseStockpile(cmd.stockpile_json);
     for (const [k, v] of Object.entries(ores)) stockpile.ores[k] = (stockpile.ores[k] || 0) + v;
     cmd.stockpile_json = stockpile;
@@ -1312,13 +1387,16 @@ router.post('/dungeon/claim', async (req: Request, res: Response) => {
 
     let pity = store.gamePity.find((p) => p.user_id === user.username);
     if (!pity) { pity = { user_id: user.username, rolls_since_rare: 0, rolls_since_legendary: 0 }; store.gamePity.push(pity); }
-    const { item, newPity } = rollLoot(pity);
+    const bonuses = loadBonusesDemo(store, user.username);
+    const thresholds = pityThresholds(bonuses);
+    const { item, newPity } = rollLoot(pity, user.username, thresholds);
     pity.rolls_since_rare = newPity.rolls_since_rare;
     pity.rolls_since_legendary = newPity.rolls_since_legendary;
+    const scaledStats = scaleItemStats(item.stats as Record<string, number>, bonuses.dungeonLoot);
 
     const inv = {
       id: uuid(), user_id: user.username, item_id: item.id, name: item.name,
-      rarity: item.rarity, stats: item.stats, quantity: 1, equipped_to_unit: null,
+      rarity: item.rarity, stats: scaledStats, quantity: 1, equipped_to_unit: null,
     };
     store.gameInventory.push(inv);
     run.loot_json = [...(run.loot_json || []), inv];
