@@ -36,9 +36,7 @@ import {
   type Rarity,
 } from '../lib/gameConfig.js';
 import {
-  calcOfflineResources,
   calcBuildingAccrued,
-  calcStockpileAccrual,
   mergeStockpile,
   rollLoot,
   rollPackUnit,
@@ -71,7 +69,12 @@ import {
   scaleItemStats,
   type CommanderBonuses,
 } from '../lib/commanderSkills.js';
-import { getMarketSellBonus } from '../lib/buildingProduction.js';
+import {
+  computePendingProduction,
+  computeProductionGains,
+  formatProductionGains,
+  getMarketSellBonus,
+} from '../lib/buildingProduction.js';
 import { awardXpDemo, awardXpLive } from './progress.js';
 import * as gameDb from '../lib/gameSupabase.js';
 import {
@@ -155,20 +158,21 @@ function applyOffline(store: ReturnType<typeof getDemoStore>, userId: string) {
   const cmd = getOrCreateCommander(store, userId);
   const buildings = store.gameBuildings.filter((b) => b.user_id === userId);
   const bonuses = loadBonusesDemo(store, userId);
-  const offline = calcOfflineResources(buildings, cmd.last_seen_at);
-  const stockpileAccrual = calcStockpileAccrual(
-    buildings,
-    cmd.last_seen_at,
-    8,
-    bonuses.farmYield,
-    bonuses.cropSpeed
-  );
-  cmd.gold += offline.gold;
-  cmd.materials += offline.materials;
-  cmd.food += offline.food;
-  cmd.faction_currency += offline.faction;
-  cmd.stockpile_json = mergeStockpile(cmd.stockpile_json, stockpileAccrual);
+  const gained = computeProductionGains(buildings, cmd.last_seen_at, {
+    skillFarmYield: bonuses.farmYield,
+    skillCropSpeed: bonuses.cropSpeed,
+  });
+  cmd.gold += gained.wallet.gold;
+  cmd.materials += gained.wallet.materials;
+  cmd.food += gained.wallet.food;
+  cmd.faction_currency += gained.wallet.faction;
+  cmd.stockpile_json = mergeStockpile(cmd.stockpile_json, gained.stockpile);
   cmd.last_seen_at = new Date().toISOString();
+  return {
+    commander: cmd,
+    gained,
+    summary: formatProductionGains(gained),
+  };
 }
 
 function buildDemoMarket() {
@@ -205,18 +209,16 @@ router.get('/state', async (req: Request, res: Response) => {
     refreshPower(store, user.username);
     const buildings = store.gameBuildings.filter((b) => b.user_id === user.username);
     const bonuses = loadBonusesDemo(store, user.username);
-    const pending_stockpile = calcStockpileAccrual(
-      buildings,
-      cmd.last_seen_at,
-      8,
-      bonuses.farmYield,
-      bonuses.cropSpeed
-    );
+    const pending = computePendingProduction(buildings, cmd.last_seen_at, {
+      skillFarmYield: bonuses.farmYield,
+      skillCropSpeed: bonuses.cropSpeed,
+    });
     return res.json({
       commander: cmd,
       buildings,
       building_accrued: buildAccruedPayload(store, user.username),
-      pending_stockpile,
+      pending_stockpile: pending.stockpile,
+      pending_wallet: pending.wallet,
       units: store.gameUnits.filter((u) => u.user_id === user.username),
       inventory: store.gameInventory.filter((i) => i.user_id === user.username),
       missions: store.gameMissions.filter((m) => m.user_id === user.username),
@@ -645,14 +647,13 @@ router.post('/collect', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
-    applyOffline(store, user.username);
-    const cmd = getOrCreateCommander(store, user.username);
-    return res.json({ commander: cmd });
+    const result = applyOffline(store, user.username);
+    return res.json(result);
   }
 
   try {
-    const cmd = await gameDb.applyOffline(supabase, user.username);
-    res.json({ commander: cmd });
+    const result = await gameDb.applyOffline(supabase, user.username);
+    res.json(result);
   } catch (err) {
     handleGameError(res, err);
   }

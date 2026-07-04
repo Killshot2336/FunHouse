@@ -20,6 +20,8 @@ export function BuildingUpgrades({ state, building, onUpdate }: BuildingUpgrades
   const tree = state.config.upgrade_trees?.[building.building_key] || [];
 
   const upgrade = async (slot: number) => {
+    const slotDef = tree.find((s) => s.slot === slot);
+    const prevLevel = meta.upgrades[String(slot)] || 0;
     setUpgrading(slot);
     try {
       await api(`/game/buildings/${building.id}/upgrade`, {
@@ -27,7 +29,13 @@ export function BuildingUpgrades({ state, building, onUpdate }: BuildingUpgrades
         body: JSON.stringify({ slot }),
       }, token);
       playSound(user!.theme, 'buildPlace');
-      notify('Building upgrade installed!', 'success');
+      const newLevel = prevLevel + 1;
+      notify(
+        slotDef
+          ? `${slotDef.name} → Lv.${newLevel} active! ${slotDef.desc}`
+          : `Upgrade slot ${slot} → Lv.${newLevel}`,
+        'success'
+      );
       onUpdate();
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Upgrade failed', 'error');

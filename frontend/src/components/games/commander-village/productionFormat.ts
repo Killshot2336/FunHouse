@@ -46,3 +46,44 @@ export function mergeStockpileDisplay(stored: StockpileLike, pending?: Stockpile
   base.stone += pending.stone || 0;
   return base;
 }
+
+export interface WalletLike {
+  gold: number;
+  materials: number;
+  food?: number;
+  faction: number;
+}
+
+export function hasPendingStockpile(pending?: StockpileLike | null): boolean {
+  if (!pending) return false;
+  if (pending.wood > 0 || pending.stone > 0) return true;
+  if (Object.values(pending.crops || {}).some((v) => v > 0)) return true;
+  if (Object.values(pending.ores || {}).some((v) => v > 0)) return true;
+  return false;
+}
+
+export function hasPendingWallet(pending?: WalletLike | null): boolean {
+  if (!pending) return false;
+  return pending.gold > 0 || pending.materials > 0 || (pending.food || 0) > 0 || pending.faction > 0;
+}
+
+export function formatPendingSummary(
+  pendingStockpile?: StockpileLike | null,
+  pendingWallet?: WalletLike | null
+): string {
+  const parts: string[] = [];
+  const w = pendingWallet;
+  if (w?.gold) parts.push(`${w.gold}🪙`);
+  if (w?.materials) parts.push(`${w.materials}⛏️`);
+  if (w?.faction) parts.push(`${w.faction}⭐`);
+  const s = pendingStockpile;
+  if (s) {
+    const cropTotal = Object.values(s.crops || {}).reduce((a, b) => a + b, 0);
+    if (cropTotal > 0) parts.push(`${cropTotal}🌾`);
+    if (s.wood > 0) parts.push(`${s.wood}🪵`);
+    if (s.stone > 0) parts.push(`${s.stone}🪨`);
+    const oreTotal = Object.values(s.ores || {}).reduce((a, b) => a + b, 0);
+    if (oreTotal > 0) parts.push(`${oreTotal}💎`);
+  }
+  return parts.join(' · ');
+}

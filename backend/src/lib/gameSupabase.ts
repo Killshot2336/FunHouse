@@ -69,7 +69,16 @@ import {
   scaleItemStats,
   type CommanderBonuses,
 } from './commanderSkills.js';
-import { getMarketSellBonus } from './buildingProduction.js';
+import {
+  computePendingProduction,
+  computeProductionGains,
+  formatProductionGains,
+  getMarketSellBonus,
+  getBarracksRecruitDiscount,
+  getMarketBulkSellBonus,
+  getFarmCropSellBonus,
+  type ProductionGains,
+} from './buildingProduction.js';
 import { awardXp } from '../routes/progress.js';
 import {
   type TradeResources,
@@ -305,33 +314,38 @@ export async function refreshPower(sb: SupabaseClient, userId: string): Promise<
   await sb.from('game_commanders').update({ power_rating: power }).eq('user_id', userId);
 }
 
-export async function applyOffline(sb: SupabaseClient, userId: string): Promise<Commander> {
+export async function applyOffline(sb: SupabaseClient, userId: string): Promise<{
+  commander: Commander;
+  gained: ProductionGains;
+  summary: string;
+}> {
   const cmd = await getOrCreateCommander(sb, userId);
   const bonuses = await loadBonuses(sb, userId);
   const { data: buildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
 
   const buildingStates = (buildings || []) as BuildingState[];
-  const offline = calcOfflineResources(buildingStates, cmd.last_seen_at);
-  const stockpileAccrual = calcStockpileAccrual(
-    buildingStates,
-    cmd.last_seen_at,
-    8,
-    bonuses.farmYield,
-    bonuses.cropSpeed
-  );
-  const mergedStockpile = mergeStockpile(cmd.stockpile_json, stockpileAccrual);
+  const gained = computeProductionGains(buildingStates, cmd.last_seen_at, {
+    skillFarmYield: bonuses.farmYield,
+    skillCropSpeed: bonuses.cropSpeed,
+  });
+
+  const mergedStockpile = mergeStockpile(cmd.stockpile_json, gained.stockpile);
 
   const updated = {
-    gold: cmd.gold + offline.gold,
-    materials: cmd.materials + offline.materials,
-    food: cmd.food + offline.food,
-    faction_currency: cmd.faction_currency + offline.faction,
+    gold: cmd.gold + gained.wallet.gold,
+    materials: cmd.materials + gained.wallet.materials,
+    food: cmd.food + gained.wallet.food,
+    faction_currency: cmd.faction_currency + gained.wallet.faction,
     stockpile_json: mergedStockpile,
     last_seen_at: new Date().toISOString(),
   };
 
   await sb.from('game_commanders').update(updated).eq('user_id', userId);
-  return { ...cmd, ...updated };
+  return {
+    commander: { ...cmd, ...updated },
+    gained,
+    summary: formatProductionGains(gained),
+  };
 }
 
 function buildMarketConfig() {
@@ -364,19 +378,17 @@ export async function getGameState(sb: SupabaseClient, userId: string) {
 
   const buildings = (buildingsRes.data || []) as BuildingState[];
   const bonuses = await loadBonuses(sb, userId);
-  const pending_stockpile = calcStockpileAccrual(
-    buildings,
-    cmd.last_seen_at,
-    8,
-    bonuses.farmYield,
-    bonuses.cropSpeed
-  );
+  const pending = computePendingProduction(buildings, cmd.last_seen_at, {
+    skillFarmYield: bonuses.farmYield,
+    skillCropSpeed: bonuses.cropSpeed,
+  });
 
   return {
     commander: { ...cmd, stockpile_json: parseStockpile(cmd.stockpile_json) },
     buildings,
     building_accrued: calcBuildingAccrued(buildings, cmd.last_seen_at),
-    pending_stockpile,
+    pending_stockpile: pending.stockpile,
+    pending_wallet: pending.wallet,
     units: (unitsRes.data || []).map(mapUnit),
     inventory: (inventoryRes.data || []).map(mapInventory),
     missions: missionsRes.data || [],
@@ -530,7 +542,10 @@ export async function recruitUnit(sb: SupabaseClient, userId: string, unit_key: 
 
   const maxSlots = maxArmySlots(bonuses);
   if ((count || 0) >= maxSlots) throw new Error(`Army full (max ${maxSlots})`);
-  const cost = Math.max(1, Math.floor(unitDef.baseCost * bonuses.recruitDiscount));
+
+  const { data: allBuildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
+  const barracksDiscount = getBarracksRecruitDiscount((allBuildings || []) as BuildingState[]);
+  const cost = Math.max(1, Math.floor(unitDef.baseCost * bonuses.recruitDiscount * (1 - barracksDiscount)));
   if (cmd.gold < cost) throw new Error('Not enough gold');
 
   await sb.from('game_commanders').update({ gold: cmd.gold - cost }).eq('user_id', userId);
@@ -1264,23 +1279,29 @@ export async function sellResource(
   const cmd = await getOrCreateCommander(sb, userId);
   const bonuses = await loadBonuses(sb, userId);
   const { data: buildingsRows } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
-  const marketBuildingBonus = getMarketSellBonus((buildingsRows || []) as BuildingState[]);
-  const stockpile = parseStockpile(cmd.stockpile_json);
+  const buildingStates = (buildingsRows || []) as BuildingState[];
   const hourSeed = Math.floor(Date.now() / 3600000);
   const cropPrices = getCropPrices(hourSeed);
   const orePrices = getOrePrices(hourSeed);
+  const marketBuildingBonus = getMarketSellBonus(buildingStates);
+  const bulkBonus = getMarketBulkSellBonus(buildingStates);
+  const cropBonus = cropPrices[resourceType] !== undefined
+    ? getFarmCropSellBonus(buildingStates, resourceType)
+    : 1;
+  const sellMult = bonuses.marketSell * marketBuildingBonus * bulkBonus * cropBonus;
+  const stockpile = parseStockpile(cmd.stockpile_json);
 
   let goldEarned = 0;
   if (cropPrices[resourceType] !== undefined) {
     const available = stockpile.crops[resourceType] || 0;
     if (available < amount) throw new Error('Not enough crops');
     stockpile.crops[resourceType] = available - amount;
-    goldEarned = Math.floor(cropPrices[resourceType] * amount * bonuses.marketSell * marketBuildingBonus);
+    goldEarned = Math.floor(cropPrices[resourceType] * amount * sellMult);
   } else if (orePrices[resourceType] !== undefined) {
     const available = stockpile.ores[resourceType] || 0;
     if (available < amount) throw new Error('Not enough ores');
     stockpile.ores[resourceType] = available - amount;
-    goldEarned = Math.floor(orePrices[resourceType] * amount * bonuses.marketSell * marketBuildingBonus);
+    goldEarned = Math.floor(orePrices[resourceType] * amount * sellMult);
   } else {
     throw new Error('Unknown resource type');
   }

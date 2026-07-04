@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useAuthStore } from '../../../stores';
-import { api } from '../../../lib/api';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api, playSound } from '../../../lib/api';
 import { StoryIntro } from './StoryIntro';
 import { VillageMap } from './VillageMap';
 import { ArmyRoster } from './ArmyRoster';
@@ -16,7 +16,7 @@ import { CommanderProgress } from './CommanderProgress';
 import { MarketHub } from './MarketHub';
 import { DungeonRun } from './DungeonRun';
 import { GameGuide } from './GameGuide';
-import { mergeStockpileDisplay } from './productionFormat';
+import { mergeStockpileDisplay, hasPendingStockpile, hasPendingWallet, formatPendingSummary } from './productionFormat';
 import type { Rarity, LootItemDef } from './gameConfig';
 
 export interface Stockpile {
@@ -63,6 +63,7 @@ export interface GameState {
     ratePerHour: number;
   }>;
   pending_stockpile?: Stockpile;
+  pending_wallet?: { gold: number; materials: number; food: number; faction: number };
   units: Array<{
     id: string; unit_key: string; slot_index: number; rarity?: Rarity;
     stats: Record<string, unknown>;
@@ -103,29 +104,67 @@ type Tab = 'village' | 'army' | 'packs' | 'world' | 'duels' | 'commander' | 'pat
 
 export function CommanderVillage() {
   const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [state, setState] = useState<GameState | null>(null);
   const [tab, setTab] = useState<Tab>(user!.theme === 'warlock' ? 'village' : user!.theme === 'enclave' ? 'missions' : 'patrol');
   const [loading, setLoading] = useState(true);
+  const [collecting, setCollecting] = useState(false);
+  const stateRef = useRef<GameState | null>(null);
 
   const fetchState = useCallback(async () => {
     try {
       const data = await api<GameState>('/game/state', {}, token);
       setState(data);
+      stateRef.current = data;
     } catch { /* ignore */ }
     setLoading(false);
   }, [token]);
 
+  const collectProduction = useCallback(async (showToast = true) => {
+    setCollecting(true);
+    try {
+      const res = await api<{
+        commander: GameState['commander'];
+        summary?: string;
+      }>('/game/collect', { method: 'POST' }, token);
+      if (res.summary) {
+        if (showToast) {
+          playSound(user!.theme, 'craft');
+          notify(`Collected ${res.summary}`, 'success');
+        }
+      } else if (showToast) {
+        notify('Nothing ready to collect yet — keep buildings running!', 'info');
+      }
+      await fetchState();
+    } catch (e) {
+      if (showToast) notify(e instanceof Error ? e.message : 'Collect failed', 'error');
+    }
+    setCollecting(false);
+  }, [token, fetchState, notify, user]);
+
   useEffect(() => { fetchState(); }, [fetchState]);
 
-  // Collect once on open — no interval (interval was resetting building timers every 60s)
+  // Collect on first open (quiet if nothing accrued yet)
   useEffect(() => {
-    api('/game/collect', { method: 'POST' }, token).then(() => fetchState()).catch(() => {});
-  }, [token, fetchState]);
+    collectProduction(false);
+  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Auto-collect every 30s when production is ready (OGame-style passive banking)
   useEffect(() => {
-    const stateId = setInterval(() => fetchState(), 60000);
-    return () => clearInterval(stateId);
-  }, [token, fetchState]);
+    const id = setInterval(() => {
+      const s = stateRef.current;
+      if (!s) {
+        fetchState();
+        return;
+      }
+      const ready =
+        hasPendingStockpile(s.pending_stockpile) ||
+        hasPendingWallet(s.pending_wallet);
+      if (ready) collectProduction(true);
+      else fetchState();
+    }, 30000);
+    return () => clearInterval(id);
+  }, [fetchState, collectProduction]);
 
   const refresh = () => fetchState();
 
@@ -155,6 +194,9 @@ export function CommanderVillage() {
   );
   const cropTotal = Object.values(stockpile.crops).reduce((a, b) => a + b, 0);
   const oreTotal = Object.values(stockpile.ores).reduce((a, b) => a + b, 0);
+  const pendingSummary = formatPendingSummary(state.pending_stockpile, state.pending_wallet);
+  const hasPending = Boolean(pendingSummary);
+  const pw = state.pending_wallet;
 
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: 'village', label: 'Village', icon: '🏘️' },
@@ -180,15 +222,25 @@ export function CommanderVillage() {
           <div className="text-xs opacity-60">Commander {user!.displayName}</div>
           <div className="font-bold">Power: {state.commander.power_rating} | Village Lv.{state.commander.village_level}</div>
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span>🪙 {state.commander.gold}</span>
-          <span>⛏️ {state.commander.materials}</span>
+        <div className="flex flex-wrap gap-2 items-center text-xs">
+          <span>🪙 {state.commander.gold}{pw?.gold ? <span className="text-green-400"> +{pw.gold}</span> : null}</span>
+          <span>⛏️ {state.commander.materials}{pw?.materials ? <span className="text-green-400"> +{pw.materials}</span> : null}</span>
           <span>🌾 {cropTotal} crops</span>
           <span>💎 {oreTotal} ore</span>
           <span>🪵 {stockpile.wood}</span>
           <span>🪨 {stockpile.stone}</span>
-          <span>⭐ {state.commander.faction_currency}</span>
+          <span>⭐ {state.commander.faction_currency}{pw?.faction ? <span className="text-green-400"> +{pw.faction}</span> : null}</span>
           {(state.commander.pickaxe_tier || 1) > 1 && <span>⛏️T{state.commander.pickaxe_tier}</span>}
+          {hasPending && (
+            <button
+              onClick={() => collectProduction(true)}
+              disabled={collecting}
+              className="theme-btn theme-btn-primary text-xs px-3 py-1.5 animate-pulse"
+              title="Bank all building production into your wallet & stockpile"
+            >
+              {collecting ? 'Collecting...' : `📥 Collect All (${pendingSummary})`}
+            </button>
+          )}
         </div>
       </div>
 

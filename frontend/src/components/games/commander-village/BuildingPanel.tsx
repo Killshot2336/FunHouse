@@ -80,9 +80,14 @@ export function BuildingPanel({
   const harvestAll = async () => {
     setCollecting(true);
     try {
-      await api('/game/collect', { method: 'POST' }, token);
+      const res = await api<{ summary?: string }>('/game/collect', { method: 'POST' }, token);
       playSound(user!.theme, 'craft');
-      notify('Harvested! Crops & resources added to stockpile.', 'success');
+      notify(
+        res.summary
+          ? `Harvested ${res.summary} — check Market tab to sell crops/ore`
+          : 'Harvested! Resources added to stockpile.',
+        'success'
+      );
       onUpdate();
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Harvest failed', 'error');
