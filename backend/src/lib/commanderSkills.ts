@@ -60,8 +60,8 @@ export function getCommanderBonuses(spent: string[]): CommanderBonuses {
   };
 }
 
-export function maxArmySlots(bonuses: CommanderBonuses): number {
-  return 6 + bonuses.armyCapBonus;
+export function maxArmySlots(bonuses: CommanderBonuses, barracksEliteGuard = false): number {
+  return 6 + bonuses.armyCapBonus + (barracksEliteGuard ? 1 : 0);
 }
 
 export function scaleResourceMap(obj: Record<string, number>, mult: number): Record<string, number> {

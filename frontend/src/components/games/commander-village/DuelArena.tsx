@@ -75,6 +75,16 @@ export function DuelArena({ onUpdate }: { onUpdate: () => void }) {
     }
   };
 
+  const cancel = async (id: string) => {
+    try {
+      await api(`/game/duels/${id}/cancel`, { method: 'POST' }, token);
+      notify('Duel cancelled', 'info');
+      fetchDuels();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Cancel failed', 'error');
+    }
+  };
+
   const others = ['aden', 'edward', 'jamie'].filter((u) => u !== user!.username);
 
   return (
@@ -94,13 +104,20 @@ export function DuelArena({ onUpdate }: { onUpdate: () => void }) {
         <h3 className="text-sm font-bold">Pending Challenges</h3>
         {duels.length === 0 && <p className="text-xs opacity-50">No pending duels</p>}
         {duels.map((d) => (
-          <div key={d.id} className="theme-card p-4 flex items-center justify-between">
+          <div key={d.id} className="theme-card p-4 flex items-center justify-between gap-2">
             <span className="text-sm">{d.challenger_id} vs {d.defender_id}</span>
-            {d.defender_id === user!.username && (
-              <button onClick={() => accept(d.id)} className="theme-btn theme-btn-primary text-xs px-3 py-1">
-                ACCEPT DUEL
-              </button>
-            )}
+            <div className="flex gap-2">
+              {d.defender_id === user!.username && (
+                <button onClick={() => accept(d.id)} className="theme-btn theme-btn-primary text-xs px-3 py-1">
+                  ACCEPT
+                </button>
+              )}
+              {(d.challenger_id === user!.username || d.defender_id === user!.username) && (
+                <button onClick={() => cancel(d.id)} className="theme-btn text-xs px-3 py-1 opacity-70">
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>

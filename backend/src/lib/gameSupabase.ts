@@ -78,6 +78,8 @@ import {
   getBarracksRecruitDiscount,
   getMarketBulkSellBonus,
   getFarmCropSellBonus,
+  hasBarracksEliteGuard,
+  getTavernDungeonLootBonus,
   type ProductionGains,
 } from './buildingProduction.js';
 import { awardXp } from '../routes/progress.js';
@@ -235,13 +237,16 @@ function resolveBuildCost(
 }
 
 async function nextSlotIndex(sb: SupabaseClient, userId: string): Promise<number> {
+  const bonuses = await loadBonuses(sb, userId);
+  const { data: buildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
+  const max = maxArmySlots(bonuses, hasBarracksEliteGuard((buildings || []) as BuildingState[]));
   const { data: units } = await sb.from('game_army_units').select('slot_index').eq('user_id', userId);
   if (!units?.length) return 0;
   const used = new Set(units.map((u) => u.slot_index as number));
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < max; i++) {
     if (!used.has(i)) return i;
   }
-  throw new Error('Army full (max 6)');
+  throw new Error(`Army full (max ${max})`);
 }
 
 async function deleteArmyUnits(sb: SupabaseClient, unitIds: string[]) {
@@ -317,6 +322,41 @@ export async function refreshPower(sb: SupabaseClient, userId: string): Promise<
 
 const MINE_AUTO_SECONDS = 55;
 
+async function applyZonePassiveIncome(sb: SupabaseClient, userId: string): Promise<void> {
+  const { data: zones } = await sb.from('game_zones').select('*').eq('owner_user_id', userId);
+  if (!zones?.length) return;
+
+  const cmd = await getOrCreateCommander(sb, userId);
+  const bonuses = await loadBonuses(sb, userId);
+  const cmdRes = {
+    gold: cmd.gold,
+    materials: cmd.materials,
+    food: cmd.food,
+    faction_currency: cmd.faction_currency,
+  };
+  let changed = false;
+  const now = Date.now();
+
+  for (const zone of zones) {
+    const lastClaim = new Date(zone.last_claim_at || zone.created_at || 0).getTime();
+    const hoursSince = (now - lastClaim) / 3600000;
+    if (hoursSince < 1) continue;
+    const ticks = Math.min(8, Math.floor(hoursSince));
+    const yieldJson = zone.yield_json as Record<string, number>;
+    const scaled: Record<string, number> = {};
+    for (const [k, v] of Object.entries(yieldJson)) {
+      scaled[k] = v * ticks;
+    }
+    applyZoneYield(cmdRes, scaled, bonuses.zoneYield);
+    await sb.from('game_zones').update({ last_claim_at: new Date().toISOString() }).eq('id', zone.id);
+    changed = true;
+  }
+
+  if (changed) {
+    await sb.from('game_commanders').update(cmdRes).eq('user_id', userId);
+  }
+}
+
 function elapsedSince(lastSeen: string): number {
   return Math.max(0, (Date.now() - new Date(lastSeen).getTime()) / 1000);
 }
@@ -365,6 +405,7 @@ export async function bankAllProduction(
   summary: string;
   banked: boolean;
 }> {
+  await applyZonePassiveIncome(sb, userId);
   const cmd = await getOrCreateCommander(sb, userId);
   const bonuses = await loadBonuses(sb, userId);
   const { data: buildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
@@ -625,11 +666,12 @@ export async function recruitUnit(sb: SupabaseClient, userId: string, unit_key: 
     .select('*', { count: 'exact', head: true })
     .eq('user_id', userId);
 
-  const maxSlots = maxArmySlots(bonuses);
+  const { data: allBuildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
+  const buildingStates = (allBuildings || []) as BuildingState[];
+  const maxSlots = maxArmySlots(bonuses, hasBarracksEliteGuard(buildingStates));
   if ((count || 0) >= maxSlots) throw new Error(`Army full (max ${maxSlots})`);
 
-  const { data: allBuildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
-  const barracksDiscount = getBarracksRecruitDiscount((allBuildings || []) as BuildingState[]);
+  const barracksDiscount = getBarracksRecruitDiscount(buildingStates);
   const cost = Math.max(1, Math.floor(unitDef.baseCost * bonuses.recruitDiscount * (1 - barracksDiscount)));
   if (cmd.gold < cost) throw new Error('Not enough gold');
 
@@ -884,6 +926,45 @@ export async function equipCommanderItem(sb: SupabaseClient, userId: string, ite
   };
 }
 
+export async function unequipItem(sb: SupabaseClient, userId: string, itemId: string) {
+  const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
+  if (!itemRow) throw new Error('Not found');
+  if (!itemRow.equipped_to_unit) throw new Error('Item not equipped on troop');
+
+  const unitId = itemRow.equipped_to_unit as string;
+  const { data: unitRow } = await sb.from('game_army_units').select('*').eq('id', unitId).eq('user_id', userId).single();
+  if (!unitRow) throw new Error('Unit not found');
+
+  const unit = mapUnit(unitRow);
+  const slot = Object.entries(unit.equipment).find(([, id]) => id === itemId)?.[0];
+  if (slot) unit.equipment[slot] = null;
+  unit.stats = removeItemStatsFromUnit(unit.stats as Record<string, unknown>, (itemRow.stats_json || {}) as Record<string, number>) as Unit['stats'];
+
+  await sb.from('game_inventory').update({ equipped_to_unit: null }).eq('id', itemId);
+  await sb.from('game_army_units').update({
+    stats_json: unit.stats,
+    equipment_json: unit.equipment,
+  }).eq('id', unitId);
+  await refreshPower(sb, userId);
+  return { success: true, item: mapInventory({ ...itemRow, equipped_to_unit: null }) };
+}
+
+export async function unequipCommanderItem(sb: SupabaseClient, userId: string, itemId: string) {
+  const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
+  if (!itemRow) throw new Error('Not found');
+  if (!itemRow.equipped_to_commander) throw new Error('Item not equipped on commander');
+
+  const cmd = await getOrCreateCommander(sb, userId);
+  const equipment = parseCommanderEquipment(cmd.commander_equipment_json);
+  for (const [slot, id] of Object.entries(equipment)) {
+    if (id === itemId) equipment[slot] = null;
+  }
+
+  await sb.from('game_inventory').update({ equipped_to_commander: false }).eq('id', itemId);
+  await sb.from('game_commanders').update({ commander_equipment_json: equipment }).eq('user_id', userId);
+  return { success: true, commander_equipment: equipment };
+}
+
 export async function redeemBlueprint(sb: SupabaseClient, userId: string, itemId: string) {
   const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
   if (!itemRow) throw new Error('Not found');
@@ -1058,6 +1139,19 @@ export async function acceptTrade(sb: SupabaseClient, userId: string, tradeId: s
   return { trade: { ...trade, status: 'accepted' }, success: true };
 }
 
+export async function rejectTrade(sb: SupabaseClient, userId: string, tradeId: string) {
+  const { data: trade } = await sb
+    .from('game_trades')
+    .select('*')
+    .eq('id', tradeId)
+    .eq('status', 'pending')
+    .single();
+  if (!trade) throw new Error('Trade not found');
+  if (trade.to_user !== userId && trade.from_user !== userId) throw new Error('Not your trade');
+  await sb.from('game_trades').update({ status: 'rejected' }).eq('id', tradeId);
+  return { success: true };
+}
+
 export async function openPack(sb: SupabaseClient, userId: string, packType: PackType) {
   const pack = PACK_TYPES[packType];
   const cmd = await getOrCreateCommander(sb, userId);
@@ -1072,7 +1166,8 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
   const pity = pityRow || { rolls_since_rare: 0, rolls_since_legendary: 0 };
   const bonuses = await loadBonuses(sb, userId);
   const thresholds = pityThresholds(bonuses);
-  const maxSlots = maxArmySlots(bonuses);
+  const { data: packBuildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
+  const maxSlots = maxArmySlots(bonuses, hasBarracksEliteGuard((packBuildings || []) as BuildingState[]));
 
   const { count: armyCount } = await sb
     .from('game_army_units')
@@ -1293,6 +1388,14 @@ export async function createDuel(sb: SupabaseClient, challengerId: string, defen
   return data;
 }
 
+export async function cancelDuel(sb: SupabaseClient, userId: string, duelId: string) {
+  const { data: duel } = await sb.from('game_duels').select('*').eq('id', duelId).eq('status', 'pending').single();
+  if (!duel) throw new Error('Duel not found');
+  if (duel.challenger_id !== userId && duel.defender_id !== userId) throw new Error('Not your duel');
+  await sb.from('game_duels').update({ status: 'cancelled' }).eq('id', duelId);
+  return { success: true };
+}
+
 export async function acceptDuel(sb: SupabaseClient, userId: string, duelId: string) {
   const { data: duel } = await sb.from('game_duels').select('*').eq('id', duelId).eq('defender_id', userId).eq('status', 'pending').single();
   if (!duel) throw new Error('Duel not found');
@@ -1499,8 +1602,17 @@ export async function mineCollect(sb: SupabaseClient, userId: string, buildingId
 export async function getDungeon(sb: SupabaseClient, userId: string) {
   const cmd = await getOrCreateCommander(sb, userId);
   const seed = getDungeonSeed();
-  const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
-  const preview = rooms.map((r) => ({ index: r.index, name: r.name, icon: r.icon }));
+  const patron = cmd.patron as string;
+  const rooms = generateDungeonRooms(seed, cmd.power_rating || 10, patron);
+  const preview = rooms.map((r) => ({
+    index: r.index,
+    name: r.name,
+    icon: r.icon,
+    enemyPower: r.enemyPower,
+    lootRarity: r.lootRarity,
+    isBoss: r.isBoss || false,
+    bossName: r.bossName,
+  }));
 
   const { data: run } = await sb.from('game_dungeon_runs').select('*').eq('user_id', userId).eq('seed', seed).single();
 
@@ -1510,13 +1622,14 @@ export async function getDungeon(sb: SupabaseClient, userId: string) {
     rooms_preview: preview,
     room_count: rooms.length,
     run: run || null,
+    player_power: cmd.power_rating,
   };
 }
 
 export async function enterDungeon(sb: SupabaseClient, userId: string) {
   const cmd = await getOrCreateCommander(sb, userId);
   const seed = getDungeonSeed();
-  const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+  const rooms = generateDungeonRooms(seed, cmd.power_rating || 10, cmd.patron as string);
 
   const { data: existing } = await sb.from('game_dungeon_runs').select('*').eq('user_id', userId).eq('seed', seed).single();
   if (existing && existing.status === 'completed') throw new Error('Already completed this dungeon');
@@ -1535,10 +1648,15 @@ export async function enterDungeon(sb: SupabaseClient, userId: string) {
   return { run, rooms };
 }
 
-export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
+export async function claimDungeonRoom(sb: SupabaseClient, userId: string, fightStartedAt?: string) {
   const seed = getDungeonSeed();
   const { data: run } = await sb.from('game_dungeon_runs').select('*').eq('user_id', userId).eq('seed', seed).eq('status', 'active').single();
   if (!run) throw new Error('No active dungeon run');
+
+  if (fightStartedAt) {
+    const elapsed = (Date.now() - new Date(fightStartedAt).getTime()) / 1000;
+    if (elapsed < 1 || elapsed > 20) throw new Error('Fight not complete — battle takes 1-20 seconds');
+  }
 
   const rooms = (run.rooms_json || []) as Array<{ index: number; enemyPower: number; lootRarity: string }>;
   const room = rooms[run.room_index];
@@ -1549,12 +1667,14 @@ export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
 
   const bonuses = await loadBonuses(sb, userId);
   const thresholds = pityThresholds(bonuses);
+  const { data: buildingsRows } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
+  const tavernLootMult = getTavernDungeonLootBonus((buildingsRows || []) as BuildingState[]);
   let pity = { rolls_since_rare: 0, rolls_since_legendary: 0 };
   const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
   if (pityRow) pity = pityRow;
 
   const { item, newPity } = rollLoot(pity, userId, thresholds);
-  const scaledStats = scaleItemStats(item.stats as Record<string, number>, bonuses.dungeonLoot);
+  const scaledStats = scaleItemStats(item.stats as Record<string, number>, bonuses.dungeonLoot * tavernLootMult);
   await sb.from('game_drop_pity').upsert({
     user_id: userId,
     rolls_since_rare: newPity.rolls_since_rare,

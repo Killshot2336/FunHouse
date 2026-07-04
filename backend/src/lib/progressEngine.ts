@@ -35,6 +35,7 @@ export const XP_AWARDS: Record<string, number> = {
   pack_open: 25,
   mission: 25,
   zone_capture: 40,
+  dungeon: 35,
   duel_win: 30,
   duel_lose: 10,
 };

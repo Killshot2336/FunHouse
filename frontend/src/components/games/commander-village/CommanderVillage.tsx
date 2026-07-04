@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useAuthStore } from '../../../stores';
 import { api } from '../../../lib/api';
+import { themeCopy } from '../../../themes/copy';
 import { StoryIntro } from './StoryIntro';
 import { VillageMap } from './VillageMap';
 import { ArmyRoster } from './ArmyRoster';
@@ -104,6 +106,7 @@ type Tab = 'village' | 'army' | 'packs' | 'world' | 'duels' | 'commander' | 'pat
 
 export function CommanderVillage() {
   const { user, token } = useAuthStore();
+  const cvCopy = themeCopy[user!.theme].commanderVillage;
   const [state, setState] = useState<GameState | null>(null);
   const [tab, setTab] = useState<Tab>(user!.theme === 'warlock' ? 'village' : user!.theme === 'enclave' ? 'missions' : 'patrol');
   const [loading, setLoading] = useState(true);
@@ -173,13 +176,23 @@ export function CommanderVillage() {
 
   return (
     <div className="space-y-4">
-      <div className="theme-card p-4 flex flex-wrap gap-3 justify-between items-center">
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="theme-card p-4 flex flex-wrap gap-3 justify-between items-center commander-village-hud"
+      >
         <div>
           <div className="text-xs opacity-60">Commander {user!.displayName}</div>
-          <div className="font-bold">Power: {state.commander.power_rating} | Village Lv.{state.commander.village_level}</div>
-          <div className="text-[10px] opacity-50 mt-0.5">Buildings auto-harvest into your counters</div>
+          <div className="font-bold glow-text">Power: {state.commander.power_rating} | Village Lv.{state.commander.village_level}</div>
+          <div className="text-[10px] opacity-50 mt-0.5">{cvCopy.subtitle}</div>
+          <div className="text-[10px] opacity-40">{cvCopy.autoHarvest}</div>
         </div>
-        <div className="flex flex-wrap gap-2 items-center text-xs">
+        <motion.div
+          className="flex flex-wrap gap-2 items-center text-xs"
+          key={`${wallet.gold}-${cropTotal}`}
+          initial={{ scale: 1.05 }}
+          animate={{ scale: 1 }}
+        >
           <span>🪙 {wallet.gold}</span>
           <span>⛏️ {wallet.materials}</span>
           <span>🌾 {cropTotal} crops</span>
@@ -188,8 +201,8 @@ export function CommanderVillage() {
           <span>🪨 {stockpile.stone}</span>
           <span>⭐ {wallet.faction}</span>
           {(state.commander.pickaxe_tier || 1) > 1 && <span>⛏️T{state.commander.pickaxe_tier}</span>}
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       <div className="flex gap-1 overflow-x-auto scrollbar-hide pb-1">
         {tabs.map((t) => (
@@ -212,7 +225,7 @@ export function CommanderVillage() {
       {tab === 'duels' && <DuelArena onUpdate={refresh} />}
       {tab === 'commander' && <CommanderProgress state={state} onUpdate={refresh} />}
       {tab === 'patrol' && <PatrolRaid state={state} onUpdate={refresh} />}
-      {tab === 'missions' && <MissionBoard state={state} />}
+      {tab === 'missions' && <MissionBoard state={state} onUpdate={refresh} />}
       {tab === 'inventory' && <InventoryGrid state={state} onUpdate={refresh} />}
       {tab === 'trade' && <TradeHub state={state} onUpdate={refresh} />}
       {tab === 'info' && <GameGuide state={state} onUpdate={refresh} />}

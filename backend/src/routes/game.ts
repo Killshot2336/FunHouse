@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase } from '../lib/supabase.js';
-import { getDemoStore, uuid } from '../lib/demoStore.js';
+import { getDemoStore, uuid, resetDemoStore } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 import {
   PATRON_BY_USER,
@@ -615,6 +615,61 @@ router.post('/commander/equip', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/inventory/:id/unequip', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const itemId = String(req.params.id);
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const item = store.gameInventory.find((i) => i.id === itemId && i.user_id === user.username);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    if (!item.equipped_to_unit) return res.status(400).json({ error: 'Not equipped on troop' });
+    const unit = store.gameUnits.find((u) => u.id === item.equipped_to_unit);
+    if (unit) {
+      const slot = Object.entries(unit.equipment).find(([, id]) => id === itemId)?.[0];
+      if (slot) unit.equipment[slot] = null;
+      unit.stats = removeItemStatsFromUnit(unit.stats as Record<string, unknown>, item.stats);
+      refreshPower(store, user.username);
+    }
+    item.equipped_to_unit = null;
+    return res.json({ success: true, item });
+  }
+
+  try {
+    const result = await gameDb.unequipItem(supabase, user.username, itemId);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
+router.post('/commander/unequip', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { item_id } = req.body as { item_id: string };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const item = store.gameInventory.find((i) => i.id === item_id && i.user_id === user.username);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    if (!item.equipped_to_commander) return res.status(400).json({ error: 'Not equipped on commander' });
+    const cmd = getOrCreateCommander(store, user.username);
+    const equipment = (cmd.commander_equipment_json || {}) as Record<string, string | null>;
+    for (const [slot, id] of Object.entries(equipment)) {
+      if (id === item_id) equipment[slot] = null;
+    }
+    cmd.commander_equipment_json = equipment;
+    item.equipped_to_commander = false;
+    return res.json({ success: true, commander_equipment: equipment });
+  }
+
+  try {
+    const result = await gameDb.unequipCommanderItem(supabase, user.username, item_id);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
 router.post('/inventory/:id/redeem', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const itemId = String(req.params.id);
@@ -854,6 +909,29 @@ router.post('/trades/:id/accept', async (req: Request, res: Response) => {
   try {
     const result = await gameDb.acceptTrade(supabase, user.username, tradeId);
     await awardXpLive(user.username, 'trade');
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
+router.post('/trades/:id/reject', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const tradeId = String(req.params.id);
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const trade = store.gameTrades.find((t) => t.id === tradeId && t.status === 'pending');
+    if (!trade) return res.status(404).json({ error: 'Trade not found' });
+    if (trade.from_user !== user.username && trade.to_user !== user.username) {
+      return res.status(403).json({ error: 'Not your trade' });
+    }
+    trade.status = 'rejected';
+    return res.json({ success: true });
+  }
+
+  try {
+    const result = await gameDb.rejectTrade(supabase, user.username, tradeId);
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -1244,6 +1322,27 @@ router.post('/duels/:id/accept', async (req: Request, res: Response) => {
   } catch (err) { handleGameError(res, err); }
 });
 
+router.post('/duels/:id/cancel', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const duelId = String(req.params.id);
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const duel = store.gameDuels.find((d) => d.id === duelId && d.status === 'pending');
+    if (!duel) return res.status(404).json({ error: 'Duel not found' });
+    if (duel.challenger_id !== user.username && duel.defender_id !== user.username) {
+      return res.status(403).json({ error: 'Not your duel' });
+    }
+    duel.status = 'cancelled';
+    return res.json({ success: true });
+  }
+
+  try {
+    const result = await gameDb.cancelDuel(supabase, user.username, duelId);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
 router.post('/sell', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const { resource_type, amount } = req.body as { resource_type: string; amount: number };
@@ -1386,14 +1485,19 @@ router.get('/dungeon', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     const seed = getDungeonSeed();
-    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10, cmd.patron);
     const run = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed);
     return res.json({
       seed,
       resets_at: dungeonResetsAt(),
-      rooms_preview: rooms.map((r) => ({ index: r.index, name: r.name, icon: r.icon })),
+      rooms_preview: rooms.map((r) => ({
+        index: r.index, name: r.name, icon: r.icon,
+        enemyPower: r.enemyPower, lootRarity: r.lootRarity,
+        isBoss: r.isBoss || false, bossName: r.bossName,
+      })),
       room_count: rooms.length,
       run: run || null,
+      player_power: cmd.power_rating,
     });
   }
 
@@ -1410,7 +1514,7 @@ router.post('/dungeon/enter', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     const seed = getDungeonSeed();
-    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10, cmd.patron);
     const existing = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed);
     if (existing?.status === 'completed') return res.status(400).json({ error: 'Already completed this dungeon' });
     if (existing) return res.json({ run: existing, rooms });
@@ -1430,12 +1534,17 @@ router.post('/dungeon/enter', async (req: Request, res: Response) => {
 
 router.post('/dungeon/claim', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
+  const { fight_started_at } = req.body as { fight_started_at?: string };
 
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
     const seed = getDungeonSeed();
     const run = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed && r.status === 'active');
     if (!run) return res.status(404).json({ error: 'No active dungeon run' });
+    if (fight_started_at) {
+      const elapsed = (Date.now() - new Date(fight_started_at).getTime()) / 1000;
+      if (elapsed < 1 || elapsed > 20) return res.status(400).json({ error: 'Fight not complete — battle takes 1-20 seconds' });
+    }
     const rooms = run.rooms_json as Array<{ index: number; enemyPower: number; lootRarity: string }>;
     const room = rooms[run.room_index];
     if (!room) return res.status(400).json({ error: 'Invalid room' });
@@ -1462,28 +1571,28 @@ router.post('/dungeon/claim', async (req: Request, res: Response) => {
       run.status = 'completed';
       run.completed_at = new Date().toISOString();
     }
+    awardXpDemo(store, user.username, 'dungeon');
     return res.json({ run, loot: inv, completed: run.status === 'completed' });
   }
 
   try {
-    const result = await gameDb.claimDungeonRoom(supabase, user.username);
-    await awardXpLive(user.username, 'patrol');
+    const result = await gameDb.claimDungeonRoom(supabase, user.username, fight_started_at);
+    await awardXpLive(user.username, 'dungeon');
     res.json(result);
   } catch (err) { handleGameError(res, err); }
 });
 
 router.post('/wipe', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
-  if (user.username !== 'aden') {
-    return res.status(403).json({ error: 'Only Aden can wipe game data' });
+  if (user.username !== 'aden' && process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Only Aden can wipe game data in production' });
   }
 
   const full = Boolean(req.body?.full);
 
   if (isDemoMode || !supabase) {
-    return res.status(503).json({
-      error: 'Game reset requires production database. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in Vercel.',
-    });
+    resetDemoStore();
+    return res.json({ wiped: true, users: HOUSE_USERS, full_household: full, demo: true });
   }
 
   try {
