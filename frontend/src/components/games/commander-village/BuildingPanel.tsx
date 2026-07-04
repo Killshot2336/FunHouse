@@ -1,10 +1,9 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { BUILDINGS, BUILDING_COSTS, buildingCost, getUnlockedCrops, CROP_TYPES } from './gameConfig';
 import { BuildingUpgrades } from './BuildingUpgrades';
-import { formatMinSec, mergeStockpileDisplay } from './productionFormat';
+import { formatMinSec, liveStockpileTotals } from './productionFormat';
 import type { GameState } from './CommanderVillage';
 
 const RESOURCE_ICONS: Record<string, string> = {
@@ -30,17 +29,14 @@ interface BuildingPanelProps {
   upgrading: boolean;
 }
 
-const STOCKPILE_BUILDINGS = ['farm', 'greenhouse', 'lumber_mill', 'quarry'] as const;
-
 export function BuildingPanel({
   state, x, y, liveAmount, ratePerMin, elapsedSec, onUpdate, onLevelUpgrade, onClose, upgrading,
 }: BuildingPanelProps) {
   const { user, token } = useAuthStore();
   const notify = useNotificationStore((s) => s.show);
-  const [collecting, setCollecting] = useState(false);
   const building = state.buildings.find((b) => b.grid_x === x && b.grid_y === y);
 
-  const stockpile = mergeStockpileDisplay(
+  const stockpile = liveStockpileTotals(
     state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 },
     state.pending_stockpile
   );
@@ -74,26 +70,6 @@ export function BuildingPanel({
   const unlockedCrops = getUnlockedCrops(meta.upgrades || {});
   const activeCrop = meta.crop || 'corn';
   const cropQty = isCropBuilding ? (stockpile.crops[activeCrop] || 0) : 0;
-  const pendingCrop = isCropBuilding ? (state.pending_stockpile?.crops[activeCrop] || 0) : 0;
-  const needsHarvest = STOCKPILE_BUILDINGS.includes(building.building_key as typeof STOCKPILE_BUILDINGS[number]);
-
-  const harvestAll = async () => {
-    setCollecting(true);
-    try {
-      const res = await api<{ summary?: string }>('/game/collect', { method: 'POST' }, token);
-      playSound(user!.theme, 'craft');
-      notify(
-        res.summary
-          ? `Harvested ${res.summary} — check Market tab to sell crops/ore`
-          : 'Harvested! Resources added to stockpile.',
-        'success'
-      );
-      onUpdate();
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Harvest failed', 'error');
-    }
-    setCollecting(false);
-  };
 
   const setCrop = async (crop: string) => {
     if (!unlockedCrops.includes(crop)) {
@@ -101,45 +77,18 @@ export function BuildingPanel({
       return;
     }
     try {
-      if (pendingCrop > 0 || liveAmount >= 0.5) {
-        await api('/game/collect', { method: 'POST' }, token);
-      }
       await api(`/game/buildings/${building.id}/crop`, {
         method: 'POST',
         body: JSON.stringify({ crop }),
       }, token);
       const cropName = CROP_TYPES.find((c) => c.key === crop)?.name || crop;
+      playSound(user!.theme, 'buildPlace');
       notify(`Now growing ${cropName}`, 'success');
       onUpdate();
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Crop change failed', 'error');
     }
   };
-
-  const collectMine = async () => {
-    setCollecting(true);
-    try {
-      await api('/game/mine/collect', {
-        method: 'POST',
-        body: JSON.stringify({ building_id: building.id }),
-      }, token);
-      playSound(user!.theme, 'craft');
-      notify('Ores collected!', 'success');
-      onUpdate();
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Mine collect failed', 'error');
-    }
-    setCollecting(false);
-  };
-
-  const harvestLabel =
-    building.building_key === 'farm' || building.building_key === 'greenhouse'
-      ? '🌾 Harvest Crops'
-      : building.building_key === 'lumber_mill'
-        ? '🪵 Harvest Wood'
-        : building.building_key === 'quarry'
-          ? '🪨 Harvest Stone'
-          : 'Harvest';
 
   return (
     <motion.div
@@ -159,7 +108,7 @@ export function BuildingPanel({
       </div>
 
       <div className="p-3 rounded-lg border border-current/20 bg-black/20">
-        <div className="text-xs opacity-60 mb-1">Growing / producing</div>
+        <div className="text-xs opacity-60 mb-1">Producing (auto-harvests to your counters)</div>
         <div className="text-lg font-bold glow-text">
           +{liveAmount.toFixed(1)} {resourceIcon}
           {isCropBuilding && (
@@ -171,15 +120,19 @@ export function BuildingPanel({
         <div className="text-xs opacity-50">+{ratePerMin.toFixed(2)}/min · running {formatMinSec(elapsedSec)}</div>
         {isCropBuilding && (
           <div className="text-xs mt-2 opacity-70">
-            Stockpile: <strong>{cropQty}</strong> {activeCrop}
-            {pendingCrop > 0 && <span className="text-green-400"> (+{pendingCrop} ready to harvest)</span>}
+            In stockpile: <strong>{cropQty}</strong> {activeCrop}
           </div>
         )}
         {building.building_key === 'lumber_mill' && (
-          <div className="text-xs mt-2 opacity-70">Stockpile: <strong>{stockpile.wood}</strong> wood</div>
+          <div className="text-xs mt-2 opacity-70">In stockpile: <strong>{stockpile.wood}</strong> wood</div>
         )}
         {building.building_key === 'quarry' && (
-          <div className="text-xs mt-2 opacity-70">Stockpile: <strong>{stockpile.stone}</strong> stone</div>
+          <div className="text-xs mt-2 opacity-70">In stockpile: <strong>{stockpile.stone}</strong> stone</div>
+        )}
+        {building.building_key === 'mine' && (
+          <div className="text-xs mt-2 opacity-70">
+            Ores auto-collect ~every minute · Pickaxe T{state.commander.pickaxe_tier || 1}
+          </div>
         )}
       </div>
 
@@ -206,26 +159,6 @@ export function BuildingPanel({
             })}
           </div>
         </div>
-      )}
-
-      {needsHarvest && (
-        <button
-          onClick={harvestAll}
-          disabled={collecting}
-          className="theme-btn theme-btn-primary w-full text-sm py-2"
-        >
-          {collecting ? 'Harvesting...' : harvestLabel}
-        </button>
-      )}
-
-      {building.building_key === 'mine' && (
-        <button
-          onClick={collectMine}
-          disabled={collecting}
-          className="theme-btn theme-btn-primary w-full text-sm py-2"
-        >
-          {collecting ? 'Mining...' : `⛏️ Collect Ores (Pickaxe T${state.commander.pickaxe_tier || 1})`}
-        </button>
       )}
 
       <div className="text-xs opacity-60">

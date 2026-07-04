@@ -73,6 +73,7 @@ import {
   computePendingProduction,
   computeProductionGains,
   formatProductionGains,
+  hasProductionGains,
   getMarketSellBonus,
 } from '../lib/buildingProduction.js';
 import { awardXpDemo, awardXpLive } from './progress.js';
@@ -154,25 +155,66 @@ function refreshPower(store: ReturnType<typeof getDemoStore>, userId: string) {
   cmd.power_rating = calcPowerRating(units, cmd.village_level);
 }
 
-function applyOffline(store: ReturnType<typeof getDemoStore>, userId: string) {
+const MINE_AUTO_SECONDS = 55;
+
+function elapsedSinceDemo(lastSeen: string): number {
+  return Math.max(0, (Date.now() - new Date(lastSeen).getTime()) / 1000);
+}
+
+function bankAllProductionDemo(store: ReturnType<typeof getDemoStore>, userId: string) {
   const cmd = getOrCreateCommander(store, userId);
   const buildings = store.gameBuildings.filter((b) => b.user_id === userId);
   const bonuses = loadBonusesDemo(store, userId);
+  const elapsedSec = elapsedSinceDemo(cmd.last_seen_at);
+
   const gained = computeProductionGains(buildings, cmd.last_seen_at, {
     skillFarmYield: bonuses.farmYield,
     skillCropSpeed: bonuses.cropSpeed,
-  });
+  }, 0, true);
+
+  const hasMines = buildings.some((b) => b.building_key === 'mine');
+  const shouldMine = hasMines && elapsedSec >= MINE_AUTO_SECONDS;
+  if (!hasProductionGains(gained) && !shouldMine) {
+    return { commander: cmd, gained, summary: '', banked: false };
+  }
+
   cmd.gold += gained.wallet.gold;
   cmd.materials += gained.wallet.materials;
   cmd.food += gained.wallet.food;
   cmd.faction_currency += gained.wallet.faction;
   cmd.stockpile_json = mergeStockpile(cmd.stockpile_json, gained.stockpile);
+
+  if (shouldMine) {
+    for (const building of buildings.filter((b) => b.building_key === 'mine')) {
+      const meta = (building.building_meta_json || defaultBuildingMeta('mine')) as { upgrades: Record<string, number> };
+      const smithy = store.gameBuildings.find((b) => b.user_id === userId && b.building_key === 'smithy');
+      const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || {};
+      const pickaxeTier = getPickaxeTier(smithyUpgrades, cmd.pickaxe_tier || 1);
+      const ores = scaleOreMap(
+        rollOres(pickaxeTier, building.level + (meta.upgrades?.['1'] || 0), Date.now()),
+        bonuses.mineYield
+      );
+      const stockpile = parseStockpile(cmd.stockpile_json);
+      for (const [k, v] of Object.entries(ores)) {
+        stockpile.ores[k] = (stockpile.ores[k] || 0) + v;
+        gained.stockpile.ores[k] = (gained.stockpile.ores[k] || 0) + v;
+      }
+      cmd.stockpile_json = stockpile;
+      cmd.pickaxe_tier = pickaxeTier;
+    }
+  }
+
   cmd.last_seen_at = new Date().toISOString();
   return {
     commander: cmd,
     gained,
     summary: formatProductionGains(gained),
+    banked: true,
   };
+}
+
+function applyOffline(store: ReturnType<typeof getDemoStore>, userId: string) {
+  return bankAllProductionDemo(store, userId);
 }
 
 function buildDemoMarket() {
@@ -205,6 +247,7 @@ router.get('/state', async (req: Request, res: Response) => {
 
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
+    bankAllProductionDemo(store, user.username);
     const cmd = getOrCreateCommander(store, user.username);
     refreshPower(store, user.username);
     const buildings = store.gameBuildings.filter((b) => b.user_id === user.username);

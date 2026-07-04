@@ -107,7 +107,8 @@ export function calcStockpileAccrual(
   lastSeen: string,
   maxHours = MAX_ACCRUE_HOURS,
   bonuses: ProductionBonuses = {},
-  minSeconds = 0
+  minSeconds = 0,
+  floorResults = true
 ): Stockpile {
   const elapsed = Math.min(elapsedHours(lastSeen, minSeconds), maxHours);
   const stockpile = parseStockpile(null);
@@ -115,6 +116,7 @@ export function calcStockpileAccrual(
 
   const hqMult = getHqRateMultiplier(buildings);
   const hotCrop = bonuses.hotCrop ?? getHotCrop();
+  const round = floorResults ? Math.floor : (n: number) => n;
 
   for (const b of buildings) {
     const rate = buildingRate(b.building_key, b.level) * elapsed * 60 * hqMult;
@@ -129,13 +131,13 @@ export function calcStockpileAccrual(
         { ...bonuses, hotCrop },
         crop
       );
-      stockpile.crops[crop] = (stockpile.crops[crop] || 0) + Math.floor(rate * cropMult);
+      stockpile.crops[crop] = (stockpile.crops[crop] || 0) + round(rate * cropMult);
     } else if (b.building_key === 'lumber_mill') {
       let mult = getResourceBuildingMultiplier('lumber_mill', upgrades, bonuses);
       if ((upgrades['5'] || 0) >= 1) mult *= 2;
-      stockpile.wood += Math.floor(rate * mult);
+      stockpile.wood += round(rate * mult);
     } else if (b.building_key === 'quarry') {
-      stockpile.stone += Math.floor(rate * getResourceBuildingMultiplier('quarry', upgrades, bonuses));
+      stockpile.stone += round(rate * getResourceBuildingMultiplier('quarry', upgrades, bonuses));
     }
   }
   return stockpile;
@@ -145,7 +147,8 @@ export function calcOfflineWalletResources(
   buildings: BuildingState[],
   lastSeen: string,
   maxHours = MAX_ACCRUE_HOURS,
-  minSeconds = 0
+  minSeconds = 0,
+  floorResults = true
 ): WalletGains {
   const elapsed = Math.min(elapsedHours(lastSeen, minSeconds), maxHours);
   if (elapsed < 0.0001) return { gold: 0, materials: 0, food: 0, faction: 0 };
@@ -178,11 +181,12 @@ export function calcOfflineWalletResources(
     }
   }
 
+  const round = floorResults ? Math.floor : (n: number) => n;
   return {
-    gold: Math.floor(gold),
-    materials: Math.floor(materials),
+    gold: round(gold),
+    materials: round(materials),
     food: 0,
-    faction: Math.floor(faction),
+    faction: round(faction),
   };
 }
 
@@ -190,21 +194,22 @@ export function computeProductionGains(
   buildings: BuildingState[],
   lastSeen: string,
   bonuses: ProductionBonuses = {},
-  minSeconds = 3
+  minSeconds = 0,
+  floorResults = true
 ): ProductionGains {
   return {
-    wallet: calcOfflineWalletResources(buildings, lastSeen, MAX_ACCRUE_HOURS, minSeconds),
-    stockpile: calcStockpileAccrual(buildings, lastSeen, MAX_ACCRUE_HOURS, bonuses, minSeconds),
+    wallet: calcOfflineWalletResources(buildings, lastSeen, MAX_ACCRUE_HOURS, minSeconds, floorResults),
+    stockpile: calcStockpileAccrual(buildings, lastSeen, MAX_ACCRUE_HOURS, bonuses, minSeconds, floorResults),
   };
 }
 
-/** Pending preview (0 min wait) for UI */
+/** Pending preview (0 min wait) for UI — fractional so counters tick live */
 export function computePendingProduction(
   buildings: BuildingState[],
   lastSeen: string,
   bonuses: ProductionBonuses = {}
 ): ProductionGains {
-  return computeProductionGains(buildings, lastSeen, bonuses, 0);
+  return computeProductionGains(buildings, lastSeen, bonuses, 0, false);
 }
 
 export function hasProductionGains(gains: ProductionGains): boolean {

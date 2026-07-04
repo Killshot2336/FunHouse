@@ -73,6 +73,7 @@ import {
   computePendingProduction,
   computeProductionGains,
   formatProductionGains,
+  hasProductionGains,
   getMarketSellBonus,
   getBarracksRecruitDiscount,
   getMarketBulkSellBonus,
@@ -314,22 +315,89 @@ export async function refreshPower(sb: SupabaseClient, userId: string): Promise<
   await sb.from('game_commanders').update({ power_rating: power }).eq('user_id', userId);
 }
 
-export async function applyOffline(sb: SupabaseClient, userId: string): Promise<{
+const MINE_AUTO_SECONDS = 55;
+
+function elapsedSince(lastSeen: string): number {
+  return Math.max(0, (Date.now() - new Date(lastSeen).getTime()) / 1000);
+}
+
+function rollMineOres(
+  buildings: BuildingState[],
+  cmd: Commander,
+  bonuses: CommanderBonuses
+): { ores: Record<string, number>; pickaxeTier: number } {
+  const rolled: Record<string, number> = {};
+  let pickaxeTier = cmd.pickaxe_tier || 1;
+  const smithy = buildings.find((b) => b.building_key === 'smithy');
+  const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || {};
+  pickaxeTier = getPickaxeTier(smithyUpgrades, pickaxeTier);
+  const smithyBonus = 1 + (smithyUpgrades['2'] || 0) * 0.1;
+
+  for (const mine of buildings.filter((b) => b.building_key === 'mine')) {
+    const meta = (mine.building_meta_json || defaultBuildingMeta('mine')) as { upgrades: Record<string, number> };
+    const effectiveLevel = mine.level + (meta.upgrades?.['1'] || 0);
+    const ores = scaleOreMap(
+      rollOres(pickaxeTier, effectiveLevel, Date.now()),
+      bonuses.mineYield * smithyBonus
+    );
+    for (const [k, v] of Object.entries(ores)) {
+      rolled[k] = (rolled[k] || 0) + v;
+    }
+  }
+
+  return { ores: rolled, pickaxeTier };
+}
+
+function mergeOresIntoStockpile(stockpile: Stockpile, ores: Record<string, number>): Stockpile {
+  for (const [k, v] of Object.entries(ores)) {
+    stockpile.ores[k] = (stockpile.ores[k] || 0) + v;
+  }
+  return stockpile;
+}
+
+export async function bankAllProduction(
+  sb: SupabaseClient,
+  userId: string,
+  minSeconds = 0
+): Promise<{
   commander: Commander;
   gained: ProductionGains;
   summary: string;
+  banked: boolean;
 }> {
   const cmd = await getOrCreateCommander(sb, userId);
   const bonuses = await loadBonuses(sb, userId);
   const { data: buildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
-
   const buildingStates = (buildings || []) as BuildingState[];
+  const elapsedSec = elapsedSince(cmd.last_seen_at);
+
   const gained = computeProductionGains(buildingStates, cmd.last_seen_at, {
     skillFarmYield: bonuses.farmYield,
     skillCropSpeed: bonuses.cropSpeed,
-  });
+  }, minSeconds, true);
 
-  const mergedStockpile = mergeStockpile(cmd.stockpile_json, gained.stockpile);
+  const hasMines = buildingStates.some((b) => b.building_key === 'mine');
+  const shouldMine = hasMines && elapsedSec >= MINE_AUTO_SECONDS;
+  if (!hasProductionGains(gained) && !shouldMine) {
+    return {
+      commander: cmd,
+      gained: { wallet: { gold: 0, materials: 0, food: 0, faction: 0 }, stockpile: parseStockpile(null) },
+      summary: '',
+      banked: false,
+    };
+  }
+
+  let mergedStockpile = mergeStockpile(cmd.stockpile_json, gained.stockpile);
+  let pickaxeTier = cmd.pickaxe_tier || 1;
+
+  if (shouldMine) {
+    const mineResult = rollMineOres(buildingStates, cmd, bonuses);
+    mergedStockpile = mergeOresIntoStockpile(mergedStockpile, mineResult.ores);
+    pickaxeTier = mineResult.pickaxeTier;
+    for (const [k, v] of Object.entries(mineResult.ores)) {
+      gained.stockpile.ores[k] = (gained.stockpile.ores[k] || 0) + v;
+    }
+  }
 
   const updated = {
     gold: cmd.gold + gained.wallet.gold,
@@ -337,6 +405,7 @@ export async function applyOffline(sb: SupabaseClient, userId: string): Promise<
     food: cmd.food + gained.wallet.food,
     faction_currency: cmd.faction_currency + gained.wallet.faction,
     stockpile_json: mergedStockpile,
+    pickaxe_tier: pickaxeTier,
     last_seen_at: new Date().toISOString(),
   };
 
@@ -345,6 +414,20 @@ export async function applyOffline(sb: SupabaseClient, userId: string): Promise<
     commander: { ...cmd, ...updated },
     gained,
     summary: formatProductionGains(gained),
+    banked: true,
+  };
+}
+
+export async function applyOffline(sb: SupabaseClient, userId: string): Promise<{
+  commander: Commander;
+  gained: ProductionGains;
+  summary: string;
+}> {
+  const result = await bankAllProduction(sb, userId, 0);
+  return {
+    commander: result.commander,
+    gained: result.gained,
+    summary: result.summary,
   };
 }
 
@@ -361,6 +444,8 @@ function buildMarketConfig() {
 }
 
 export async function getGameState(sb: SupabaseClient, userId: string) {
+  await bankAllProduction(sb, userId, 0);
+
   const commander = await getOrCreateCommander(sb, userId);
   await refreshPower(sb, userId);
 
