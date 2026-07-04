@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase, getUrgencyLevel } from '../lib/supabase.js';
 import { getDemoStore, uuid } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
-import { awardXpDemo } from './progress.js';
+import { awardXpDemo, awardXpLive } from './progress.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -99,6 +99,7 @@ router.post('/litter-boxes/:id/clean', async (req: Request, res: Response) => {
 
   const { data, error } = await supabase.from('litter_cleanings').insert({ litter_box_id: boxId, cleaned_by: user.username }).select().single();
   if (error) return res.status(500).json({ error: error.message });
+  await awardXpLive(user.username, 'cat_care');
   res.json(data);
 });
 
@@ -153,6 +154,7 @@ router.post('/feeding', async (req: Request, res: Response) => {
 
   const { data, error } = await supabase.from('feeding_logs').insert({ cat_names, fed_by: user.username, notes }).select().single();
   if (error) return res.status(500).json({ error: error.message });
+  await awardXpLive(user.username, 'cat_care');
   res.json(data);
 });
 

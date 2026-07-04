@@ -61,5 +61,15 @@ export function tradeDescription(bundle: TradeResources): string {
   const parts = (Object.keys(RESOURCE_META) as ResourceKey[])
     .filter((k) => (bundle[k] || 0) > 0)
     .map((k) => `${bundle[k]} ${RESOURCE_META[k].icon}`);
-  return parts.join(' + ') || 'items';
+  if (parts.length > 0) return parts.join(' + ');
+  if (bundle.item_ids && bundle.item_ids.length > 0) return `${bundle.item_ids.length} item(s)`;
+  return 'Nothing';
+}
+
+export function hasTradeContent(bundle: TradeResources): boolean {
+  for (const key of Object.keys(RESOURCE_META) as ResourceKey[]) {
+    if ((bundle[key] || 0) > 0) return true;
+  }
+  if (bundle.item_ids && bundle.item_ids.length > 0) return true;
+  return false;
 }

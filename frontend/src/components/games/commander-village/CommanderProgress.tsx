@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useAuthStore } from '../../../stores';
+import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api } from '../../../lib/api';
-import { COMMANDER_SKILLS } from './gameConfig';
+import { COMMANDER_SKILLS, RARITY_COLORS } from './gameConfig';
+import { CommanderSkillTree } from './CommanderSkillTree';
+import type { GameState } from './CommanderVillage';
 
 interface Progress {
   level: number;
@@ -14,9 +16,17 @@ interface Progress {
   skills: typeof COMMANDER_SKILLS;
 }
 
-export function CommanderProgress() {
+const SLOT_LABELS: Record<string, string> = {
+  weapon: '⚔️ Weapon',
+  armor: '🛡️ Armor',
+  relic: '✨ Relic',
+};
+
+export function CommanderProgress({ state, onUpdate }: { state: GameState; onUpdate: () => void }) {
   const { token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [progress, setProgress] = useState<Progress | null>(null);
+  const [equipping, setEquipping] = useState(false);
 
   const fetch = async () => {
     try {
@@ -27,15 +37,36 @@ export function CommanderProgress() {
 
   useEffect(() => { fetch(); }, [token]);
 
-  const spendSp = async (skillKey: string) => {
-    await api('/progress/spend', { method: 'POST', body: JSON.stringify({ skill_key: skillKey }) }, token);
-    fetch();
+  const equipment = state.commander.commander_equipment_json || { weapon: null, armor: null, relic: null };
+  const equipableItems = state.inventory.filter(
+    (i) => !i.equipped_to_unit && !i.equipped_to_commander &&
+      ['weapon', 'armor', 'relic'].includes(state.config.items?.find((d) => d.id === i.item_id)?.item_type || '')
+  );
+
+  const equipCommander = async (itemId: string) => {
+    setEquipping(true);
+    try {
+      const res = await api<{ bonus?: string; slot: string }>('/game/commander/equip', {
+        method: 'POST',
+        body: JSON.stringify({ item_id: itemId }),
+      }, token);
+      notify(`Commander equipped (${res.bonus || res.slot})`, 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Equip failed', 'error');
+    }
+    setEquipping(false);
   };
+
+  const itemById = (id: string | null) => state.inventory.find((i) => i.id === id);
 
   if (!progress) return <div className="text-xs opacity-50">Loading progress...</div>;
 
   const pct = Math.min(100, (progress.xp_progress / progress.xp_needed) * 100);
   const spent = progress.sp_spent_json || [];
+  const skills = progress.skills?.length ? progress.skills : COMMANDER_SKILLS;
+  const perks = state.commander.build_perks_json;
+  const hasPerks = perks && (Object.keys(perks.discounts || {}).length > 0 || (perks.vouchers?.length || 0) > 0);
 
   return (
     <div className="space-y-4">
@@ -52,31 +83,67 @@ export function CommanderProgress() {
             transition={{ duration: 0.8 }}
           />
         </div>
-        <p className="text-xs opacity-50 mt-2">SP available: {progress.sp_unspent}</p>
+        <p className="text-xs opacity-50 mt-2">Skill points available: {progress.sp_unspent}</p>
       </div>
 
-      <div>
-        <h3 className="text-sm font-bold mb-2">Commander Skill Tree</h3>
-        <div className="space-y-2">
-          {COMMANDER_SKILLS.map((skill) => {
-            const unlocked = spent.includes(skill.key);
+      <div className="theme-card p-4 space-y-3">
+        <h3 className="text-sm font-bold">Commander Gear</h3>
+        <p className="text-xs opacity-50">Armor & weapons on your commander boost your army&apos;s power.</p>
+        <div className="grid grid-cols-3 gap-2">
+          {(['weapon', 'armor', 'relic'] as const).map((slot) => {
+            const itemId = equipment[slot];
+            const item = itemById(itemId);
             return (
-              <button
-                key={skill.key}
-                disabled={unlocked || progress.sp_unspent < skill.cost}
-                onClick={() => spendSp(skill.key)}
-                className={`theme-card w-full p-3 text-left ${unlocked ? 'opacity-60' : ''}`}
-              >
-                <div className="flex justify-between">
-                  <span className="font-bold text-sm">{skill.name}</span>
-                  <span className="text-xs">{unlocked ? '✓' : `${skill.cost} SP`}</span>
-                </div>
-                <p className="text-xs opacity-50">{skill.desc}</p>
-              </button>
+              <div key={slot} className="theme-card p-2 text-center min-h-[72px] flex flex-col justify-center">
+                <div className="text-[10px] opacity-50">{SLOT_LABELS[slot]}</div>
+                {item ? (
+                  <div className="text-xs font-bold mt-1" style={{ color: RARITY_COLORS[item.rarity as keyof typeof RARITY_COLORS] }}>
+                    {item.name}
+                  </div>
+                ) : (
+                  <div className="text-xs opacity-30 mt-1">Empty</div>
+                )}
+              </div>
             );
           })}
         </div>
+        {equipableItems.length > 0 && (
+          <div className="space-y-1">
+            <p className="text-xs opacity-50">Equip from inventory:</p>
+            <div className="flex gap-1 flex-wrap">
+              {equipableItems.slice(0, 6).map((item) => (
+                <button
+                  key={item.id}
+                  disabled={equipping}
+                  onClick={() => equipCommander(item.id)}
+                  className="theme-btn text-xs px-2 py-1"
+                >
+                  {item.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
+      {hasPerks && (
+        <div className="theme-card p-4 space-y-2">
+          <h3 className="text-sm font-bold">Build Perks</h3>
+          {Object.entries(perks!.discounts || {}).map(([key, val]) => (
+            <div key={key} className="text-xs">🏗️ {Math.round(val * 100)}% off next {key} build</div>
+          ))}
+          {(perks!.vouchers || []).map((key) => (
+            <div key={key} className="text-xs">🎁 Free {key} building voucher</div>
+          ))}
+        </div>
+      )}
+
+      <CommanderSkillTree
+        skills={skills}
+        spent={spent}
+        spUnspent={progress.sp_unspent}
+        onSpend={fetch}
+      />
     </div>
   );
 }

@@ -18,7 +18,135 @@ export const BUILDINGS = {
   mine: { name: 'Mine', icon: '⛏️', resource: 'materials', baseRate: 0.8, baseCost: 75, growth: 1.15 },
   market: { name: 'Market', icon: '🏪', resource: 'gold', baseRate: 2, baseCost: 100, growth: 1.18 },
   hq: { name: 'Faction HQ', icon: '🏛️', resource: 'faction', baseRate: 0.5, baseCost: 200, growth: 1.2 },
+  greenhouse: { name: 'Greenhouse', icon: '🪴', resource: 'crop', baseRate: 1.2, baseCost: 80, growth: 1.16 },
+  lumber_mill: { name: 'Lumber Mill', icon: '🪵', resource: 'wood', baseRate: 0.9, baseCost: 70, growth: 1.14 },
+  quarry: { name: 'Quarry', icon: '🪨', resource: 'stone', baseRate: 0.7, baseCost: 85, growth: 1.15 },
+  smithy: { name: 'Smithy', icon: '🔨', resource: 'materials', baseRate: 0.5, baseCost: 120, growth: 1.18 },
+  barracks: { name: 'Barracks', icon: '🛡️', resource: 'gold', baseRate: 0.3, baseCost: 150, growth: 1.2 },
+  library: { name: 'Library', icon: '📚', resource: 'gold', baseRate: 0.4, baseCost: 110, growth: 1.17 },
+  shrine: { name: 'Shrine', icon: '⛩️', resource: 'faction', baseRate: 0.6, baseCost: 130, growth: 1.19 },
+  warehouse: { name: 'Warehouse', icon: '📦', resource: 'gold', baseRate: 0.2, baseCost: 90, growth: 1.12 },
+  workshop: { name: 'Workshop', icon: '🔧', resource: 'materials', baseRate: 0.6, baseCost: 100, growth: 1.16 },
+  tavern: { name: 'Tavern', icon: '🍺', resource: 'gold', baseRate: 0.5, baseCost: 95, growth: 1.15 },
 } as const;
+
+export const CROP_TYPES = [
+  { key: 'corn', name: 'Corn', icon: '🌽', basePrice: 10 },
+  { key: 'wheat', name: 'Wheat', icon: '🌾', basePrice: 8 },
+  { key: 'pumpkin', name: 'Pumpkin', icon: '🎃', basePrice: 14 },
+  { key: 'berries', name: 'Berries', icon: '🫐', basePrice: 12 },
+  { key: 'mushrooms', name: 'Mushrooms', icon: '🍄', basePrice: 16 },
+  { key: 'herbs', name: 'Herbs', icon: '🌿', basePrice: 11 },
+] as const;
+
+export const ORE_TYPES = [
+  { key: 'copper', name: 'Copper', icon: '🟤', basePrice: 5, minPickaxe: 1 },
+  { key: 'iron', name: 'Iron', icon: '⚙️', basePrice: 12, minPickaxe: 1 },
+  { key: 'gold', name: 'Gold Ore', icon: '🟡', basePrice: 25, minPickaxe: 2 },
+  { key: 'crystal', name: 'Crystal', icon: '💎', basePrice: 45, minPickaxe: 3 },
+  { key: 'mythril', name: 'Mythril', icon: '✨', basePrice: 80, minPickaxe: 4 },
+] as const;
+
+export const BUILDING_UPGRADE_TREES: Record<string, Array<{ slot: number; name: string; desc: string }>> = {
+  farm: [
+    { slot: 1, name: 'Yield Boost', desc: '+10% crop yield per level' },
+    { slot: 2, name: 'Growth Speed', desc: '+8% production speed per level' },
+    { slot: 3, name: 'Crop Slot', desc: 'Unlock additional crop types' },
+    { slot: 4, name: 'Market Bonus', desc: '+5% sell price for crops' },
+    { slot: 5, name: 'Auto-Harvest', desc: 'Auto-collect crops on login' },
+  ],
+  greenhouse: [
+    { slot: 1, name: 'Climate Control', desc: '+12% greenhouse yield' },
+    { slot: 2, name: 'Irrigation', desc: '+10% production speed' },
+    { slot: 3, name: 'Rare Crops', desc: 'Unlock premium crop types' },
+    { slot: 4, name: 'Storage Racks', desc: '+20% crop storage cap' },
+    { slot: 5, name: 'Green Thumb', desc: 'Double yield on hot crop hour' },
+  ],
+  mine: [
+    { slot: 1, name: 'Deep Shaft', desc: '+10% ore rolls per level' },
+    { slot: 2, name: 'Ventilation', desc: 'Faster mine cooldown' },
+    { slot: 3, name: 'Ore Scanner', desc: 'Reveal ore quality before collect' },
+    { slot: 4, name: 'Reinforced Walls', desc: '+15% rare ore chance' },
+    { slot: 5, name: 'Night Shift', desc: 'Bonus collect while offline' },
+  ],
+  market: [
+    { slot: 1, name: 'Trade Routes', desc: '+8% gold income' },
+    { slot: 2, name: 'Bulk Deals', desc: 'Sell 10% more per transaction' },
+    { slot: 3, name: 'Price Intel', desc: 'See next hour crop prices' },
+    { slot: 4, name: 'Merchant Guild', desc: '+5% all sell prices' },
+    { slot: 5, name: 'Auction House', desc: 'Unlock bulk sell all' },
+  ],
+  hq: [
+    { slot: 1, name: 'Command Center', desc: '+5% all building rates' },
+    { slot: 2, name: 'Faction Banner', desc: '+10% faction currency' },
+    { slot: 3, name: 'War Room', desc: '+3% troop power' },
+    { slot: 4, name: 'Diplomacy', desc: 'Better trade offers' },
+    { slot: 5, name: 'Grand HQ', desc: '+1 village level cap' },
+  ],
+  lumber_mill: [
+    { slot: 1, name: 'Saw Blades', desc: '+10% wood per level' },
+    { slot: 2, name: 'Log Transport', desc: 'Faster wood production' },
+    { slot: 3, name: 'Forestry', desc: 'Unlock rare wood types' },
+    { slot: 4, name: 'Efficiency', desc: '-10% upgrade costs' },
+    { slot: 5, name: 'Mass Production', desc: 'Double wood on collect' },
+  ],
+  quarry: [
+    { slot: 1, name: 'Blast Mining', desc: '+10% stone yield' },
+    { slot: 2, name: 'Dynamite', desc: 'Faster stone production' },
+    { slot: 3, name: 'Gem Finder', desc: 'Chance for bonus materials' },
+    { slot: 4, name: 'Reinforcement', desc: 'Stone used in cheaper upgrades' },
+    { slot: 5, name: 'Deep Quarry', desc: 'Unlock mythril processing' },
+  ],
+  smithy: [
+    { slot: 1, name: 'Forge Heat', desc: '+1 pickaxe tier unlock' },
+    { slot: 2, name: 'Tempering', desc: 'Better ore processing yield' },
+    { slot: 3, name: 'Tool Craft', desc: 'Craft basic gear from ores' },
+    { slot: 4, name: 'Master Smith', desc: '+15% equipment stats' },
+    { slot: 5, name: 'Legendary Forge', desc: 'Max pickaxe tier 5' },
+  ],
+  barracks: [
+    { slot: 1, name: 'Recruitment', desc: '+1 troop cap per 5 levels' },
+    { slot: 2, name: 'Training Grounds', desc: '+5% unit XP gain' },
+    { slot: 3, name: 'Armory', desc: 'Cheaper unit recruitment' },
+    { slot: 4, name: 'Veterans', desc: '+3% all unit stats' },
+    { slot: 5, name: 'Elite Guard', desc: '+1 max army slot' },
+  ],
+  library: [
+    { slot: 1, name: 'Study Hall', desc: '+5% commander XP' },
+    { slot: 2, name: 'Tactics', desc: '+3% patrol loot' },
+    { slot: 3, name: 'Lore', desc: 'Unlock guide entries' },
+    { slot: 4, name: 'Research', desc: '+10% skill point gain' },
+    { slot: 5, name: 'Grand Library', desc: 'Double commander XP from missions' },
+  ],
+  shrine: [
+    { slot: 1, name: 'Offerings', desc: '+8% faction currency' },
+    { slot: 2, name: 'Blessing', desc: '+5% luck on loot rolls' },
+    { slot: 3, name: 'Ritual', desc: 'Bonus faction from duels' },
+    { slot: 4, name: 'Patron Favor', desc: '+10% pack rare rate' },
+    { slot: 5, name: 'Divine Shrine', desc: 'Mythic pity -10 rolls' },
+  ],
+  warehouse: [
+    { slot: 1, name: 'Storage', desc: '+20% stockpile cap' },
+    { slot: 2, name: 'Organization', desc: 'See all stockpile at glance' },
+    { slot: 3, name: 'Preservation', desc: 'Crops don\'t spoil offline' },
+    { slot: 4, name: 'Trade Hub', desc: '+10% sell cap' },
+    { slot: 5, name: 'Mega Warehouse', desc: 'Unlimited crop storage' },
+  ],
+  workshop: [
+    { slot: 1, name: 'Workbench', desc: 'Craft from 1 ore type' },
+    { slot: 2, name: 'Blueprints', desc: 'Unlock rare recipes' },
+    { slot: 3, name: 'Assembly Line', desc: '+15% craft yield' },
+    { slot: 4, name: 'Quality Control', desc: 'Better crafted item stats' },
+    { slot: 5, name: 'Master Workshop', desc: 'Craft epic gear' },
+  ],
+  tavern: [
+    { slot: 1, name: 'Recruitment Board', desc: 'See dungeon preview' },
+    { slot: 2, name: 'Ale & Rest', desc: '+5% dungeon loot' },
+    { slot: 3, name: 'Party Buffs', desc: 'Troops +5% in dungeon' },
+    { slot: 4, name: 'Bard\'s Tale', desc: 'Extra dungeon room chance' },
+    { slot: 5, name: 'Hero\'s Rest', desc: 'One free dungeon retry per seed' },
+  ],
+};
 
 export const UNITS_BY_PATRON: Record<Patron, Array<{ key: string; name: string; icon: string; baseCost: number }>> = {
   rick: [
@@ -44,19 +172,30 @@ export const UNITS_BY_PATRON: Record<Patron, Array<{ key: string; name: string; 
   ],
 };
 
-export const LOOT_TABLE: Array<{ id: string; name: string; rarity: Rarity; sellValue: number; stats: Record<string, number> }> = [
-  { id: 'scrap', name: 'Scrap Metal', rarity: 'common', sellValue: 5, stats: {} },
-  { id: 'basic_gear', name: 'Basic Gear', rarity: 'common', sellValue: 10, stats: { atk: 1 } },
-  { id: 'food_crate', name: 'Food Crate', rarity: 'common', sellValue: 8, stats: {} },
-  { id: 'unit_shard', name: 'Unit Shard', rarity: 'uncommon', sellValue: 25, stats: { atk: 3 } },
-  { id: 'blueprint', name: 'Building Blueprint', rarity: 'uncommon', sellValue: 30, stats: {} },
-  { id: 'named_weapon', name: 'Named Weapon', rarity: 'rare', sellValue: 75, stats: { atk: 8, spd: 2 } },
-  { id: 'rare_unlock', name: 'Rare Unit Unlock', rarity: 'rare', sellValue: 100, stats: { atk: 5, def: 5 } },
-  { id: 'set_piece', name: 'Set Armor Piece', rarity: 'epic', sellValue: 200, stats: { atk: 12, def: 10 } },
-  { id: 'relic', name: 'Unique Relic', rarity: 'legendary', sellValue: 500, stats: { atk: 20, def: 15, luck: 10 } },
-  { id: 'mega_unlock', name: 'Mega Building Unlock', rarity: 'legendary', sellValue: 750, stats: {} },
-  { id: 'patron_artifact', name: 'Patron Artifact', rarity: 'mythic', sellValue: 2000, stats: { atk: 30, def: 25, spd: 15, luck: 20 } },
-  { id: 'cross_exotic', name: 'Cross-Faction Exotic', rarity: 'mythic', sellValue: 3000, stats: { atk: 25, def: 20, luck: 25 } },
+export interface LootItemDef {
+  id: string;
+  name: string;
+  rarity: Rarity;
+  sellValue: number;
+  stats: Record<string, number>;
+  description: string;
+  item_type: string;
+  use_hint: string;
+}
+
+export const LOOT_TABLE: LootItemDef[] = [
+  { id: 'scrap', name: 'Scrap Metal', rarity: 'common', sellValue: 5, stats: {}, description: 'Salvaged metal from patrols and ruins.', item_type: 'material', use_hint: 'Sell at Market for gold' },
+  { id: 'basic_gear', name: 'Basic Gear', rarity: 'common', sellValue: 10, stats: { atk: 1 }, description: 'Standard-issue equipment for new recruits.', item_type: 'weapon', use_hint: 'Equip on troop for +ATK' },
+  { id: 'food_crate', name: 'Food Crate', rarity: 'common', sellValue: 8, stats: {}, description: 'Preserved rations for your village.', item_type: 'consumable', use_hint: 'Sell at Market or trade' },
+  { id: 'unit_shard', name: 'Unit Shard', rarity: 'uncommon', sellValue: 25, stats: { atk: 3 }, description: 'Crystallized essence of a fallen warrior.', item_type: 'shard', use_hint: 'Equip on troop for +ATK' },
+  { id: 'blueprint', name: 'Building Blueprint', rarity: 'uncommon', sellValue: 30, stats: {}, description: 'Architectural plans for village expansion.', item_type: 'blueprint', use_hint: 'Redeem for a building discount or free building' },
+  { id: 'named_weapon', name: 'Named Weapon', rarity: 'rare', sellValue: 75, stats: { atk: 8, spd: 2 }, description: 'A weapon with a storied battle history.', item_type: 'weapon', use_hint: 'Equip on troop for +ATK and +SPD' },
+  { id: 'rare_unlock', name: 'Rare Unit Unlock', rarity: 'rare', sellValue: 100, stats: { atk: 5, def: 5 }, description: 'Unlocks a rare troop variant.', item_type: 'unlock', use_hint: 'Recruit special units from Army tab' },
+  { id: 'set_piece', name: 'Set Armor Piece', rarity: 'epic', sellValue: 200, stats: { atk: 12, def: 10 }, description: 'Part of a matched armor set.', item_type: 'armor', use_hint: 'Equip on troop for +ATK and +DEF' },
+  { id: 'relic', name: 'Unique Relic', rarity: 'legendary', sellValue: 500, stats: { atk: 20, def: 15, luck: 10 }, description: 'An ancient artifact of immense power.', item_type: 'relic', use_hint: 'Equip in relic slot for massive bonuses' },
+  { id: 'mega_unlock', name: 'Mega Building Unlock', rarity: 'legendary', sellValue: 750, stats: {}, description: 'Unlocks a premium building type.', item_type: 'unlock', use_hint: 'Place new building types in Village' },
+  { id: 'patron_artifact', name: 'Patron Artifact', rarity: 'mythic', sellValue: 2000, stats: { atk: 30, def: 25, spd: 15, luck: 20 }, description: 'A divine gift from your patron.', item_type: 'relic', use_hint: 'Equip in relic slot — faction ultimate' },
+  { id: 'cross_exotic', name: 'Cross-Faction Exotic', rarity: 'mythic', sellValue: 3000, stats: { atk: 25, def: 20, luck: 25 }, description: 'Forbidden tech from another dimension.', item_type: 'weapon', use_hint: 'Equip on troop or sell for premium gold' },
 ];
 
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
@@ -125,12 +264,47 @@ export const RARITY_STAT_MULT: Record<Rarity, number> = {
 };
 
 export const PACK_TYPES = {
-  standard: { name: 'Standard Pack', icon: '📦', cost: { gold: 100 } },
-  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 } },
-  premium: { name: 'Premium Pack', icon: '💎', cost: { materials: 75 } },
+  standard: { name: 'Troop Pack', icon: '📦', cost: { gold: 100 }, category: 'troop', desc: 'Pull a random troop — Grey to Mythical' },
+  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 }, category: 'troop', desc: 'Faction-themed elite troops' },
+  premium: { name: 'Elite Troop Pack', icon: '💎', cost: { materials: 75 }, category: 'troop', desc: 'Better odds for rare troops' },
+  weapon_pack: { name: 'Weapon Pack', icon: '⚔️', cost: { gold: 80 }, category: 'weapon', desc: 'RNG weapons & combat gear' },
+  armor_pack: { name: 'Armor Pack', icon: '🛡️', cost: { gold: 80 }, category: 'armor', desc: 'RNG armor pieces & shields' },
+  random_pack: { name: 'Mystery Pack', icon: '🎲', cost: { gold: 150 }, category: 'mixed', desc: '35% troop · 65% gear — trade or equip pulls' },
 } as const;
 
 export type PackType = keyof typeof PACK_TYPES;
+export type PackCategory = 'troop' | 'weapon' | 'armor' | 'mixed';
+
+export const BLUEPRINT_BUILDINGS: Record<Rarity, string[]> = {
+  common: ['farm', 'mine'],
+  uncommon: ['market', 'greenhouse', 'lumber_mill'],
+  rare: ['quarry', 'smithy', 'barracks'],
+  epic: ['library', 'shrine', 'warehouse'],
+  legendary: ['workshop', 'tavern', 'hq'],
+  mythic: ['hq', 'shrine', 'workshop'],
+};
+
+export const BLUEPRINT_DISCOUNT: Record<Rarity, number> = {
+  common: 0.1,
+  uncommon: 0.15,
+  rare: 0.25,
+  epic: 0.35,
+  legendary: 0.45,
+  mythic: 0.55,
+};
+
+export function getEquipSlotForItem(itemId: string): 'weapon' | 'armor' | 'relic' {
+  const def = LOOT_TABLE.find((i) => i.id === itemId);
+  if (!def) return 'weapon';
+  if (def.item_type === 'armor') return 'armor';
+  if (def.item_type === 'relic') return 'relic';
+  return 'weapon';
+}
+
+export function canEquipOnCommander(itemId: string): boolean {
+  const def = LOOT_TABLE.find((i) => i.id === itemId);
+  return def?.item_type === 'armor' || def?.item_type === 'weapon' || def?.item_type === 'relic';
+}
 
 export const SKILL_BRANCHES = ['health', 'damage', 'shield'] as const;
 export type SkillBranch = typeof SKILL_BRANCHES[number];
@@ -175,13 +349,26 @@ export function defaultCombatStats(rarity: Rarity = 'common'): { health: number;
   };
 }
 
+export const COMMANDER_SKILL_BRANCHES = ['economy', 'army', 'world'] as const;
+export type CommanderSkillBranch = typeof COMMANDER_SKILL_BRANCHES[number];
+
 export const COMMANDER_SKILLS = [
-  { key: 'farm_boost', name: '+5% Farm Yield', cost: 1, desc: 'Farms produce more food' },
-  { key: 'mine_boost', name: '+5% Mine Yield', cost: 1, desc: 'Mines produce more materials' },
-  { key: 'duel_luck', name: '+10% Duel Luck', cost: 1, desc: 'Better odds in duels' },
-  { key: 'pack_pity', name: '+1 Pack Pity', cost: 2, desc: 'Faster rare pulls' },
-  { key: 'grid_discount', name: 'Grid Expand -10%', cost: 2, desc: 'Cheaper territory expansion' },
-] as const;
+  { key: 'farm_boost', branch: 'economy' as const, node: 1, name: 'Farm Yield', cost: 1, desc: '+5% farm & crop output' },
+  { key: 'mine_boost', branch: 'economy' as const, node: 2, name: 'Mine Yield', cost: 1, desc: '+5% mine & ore rolls' },
+  { key: 'market_bonus', branch: 'economy' as const, node: 3, name: 'Market Bonus', cost: 2, desc: '+8% sell prices' },
+  { key: 'crop_speed', branch: 'economy' as const, node: 4, name: 'Fast Crops', cost: 2, desc: '+10% crop production speed' },
+  { key: 'trade_master', branch: 'economy' as const, node: 5, name: 'Trade Master', cost: 3, desc: '+15% trade & gift value' },
+  { key: 'recruit_cheap', branch: 'army' as const, node: 1, name: 'Recruitment', cost: 1, desc: '-10% troop recruit cost' },
+  { key: 'troop_stats', branch: 'army' as const, node: 2, name: 'Training', cost: 1, desc: '+3% all troop stats' },
+  { key: 'pack_pity', branch: 'army' as const, node: 3, name: 'Pack Pity', cost: 2, desc: 'Faster rare pack pulls' },
+  { key: 'duel_luck', branch: 'army' as const, node: 4, name: 'Duel Luck', cost: 2, desc: '+10% duel win odds' },
+  { key: 'army_cap', branch: 'army' as const, node: 5, name: 'Elite Army', cost: 3, desc: '+1 max army slot' },
+  { key: 'grid_discount', branch: 'world' as const, node: 1, name: 'Land Survey', cost: 1, desc: '-10% grid expand cost' },
+  { key: 'zone_yield', branch: 'world' as const, node: 2, name: 'Zone Harvest', cost: 1, desc: '+10% zone capture yield' },
+  { key: 'patrol_boost', branch: 'world' as const, node: 3, name: 'Patrol Veteran', cost: 2, desc: '+1 patrol loot roll' },
+  { key: 'dungeon_boost', branch: 'world' as const, node: 4, name: 'Dungeon Delver', cost: 2, desc: '+10% dungeon loot' },
+  { key: 'scout_range', branch: 'world' as const, node: 5, name: 'Scout Network', cost: 3, desc: 'See zone enemy power hints' },
+];
 
 export const ZONE_TYPES: Record<string, { name: string; icon: string; yield: Record<string, number> }> = {
   farm: { name: 'Farmland', icon: '🌾', yield: { food: 15 } },
@@ -193,4 +380,62 @@ export const ZONE_TYPES: Record<string, { name: string; icon: string; yield: Rec
 
 export function expandGridCost(gridSize: number): number {
   return Math.floor(500 * Math.pow(1.5, gridSize - 8));
+}
+
+export const GAME_GUIDE = [
+  {
+    key: 'getting_started',
+    title: 'Getting Started',
+    content: 'Tap your identity to enter Commander Village. Build farms and mines on the village grid, recruit troops in Army, and send Patrols for loot. Resources auto-collect when you return.',
+  },
+  {
+    key: 'buildings',
+    title: 'Buildings',
+    content: 'Place 14 building types on your village grid. Each has 5 unique upgrade slots — open a building panel to upgrade individual slots. Higher levels and upgrades boost production rates.',
+  },
+  {
+    key: 'crops_market',
+    title: 'Crops & Market',
+    content: 'Farms and Greenhouses grow a crop you choose. Crop prices rotate every hour — one crop is "hot" at 2× price. Sell crops and ores at the Market tab. Watch the countdown for the next price shift.',
+  },
+  {
+    key: 'mining',
+    title: 'Mining & Ores',
+    content: 'Upgrade your pickaxe at the Smithy (no ore prerequisites). Tap Collect on a Mine to roll ores based on pickaxe tier. Higher tiers unlock rarer ores like Crystal and Mythril.',
+  },
+  {
+    key: 'army',
+    title: 'Army & Packs',
+    content: 'Recruit up to 6 troops. Upgrade stats and skill trees on each TroopCard. Open packs for rare units. Rarity colors: Grey, Green, Blue, Purple, Yellow, Mythical.',
+  },
+  {
+    key: 'world_dungeon',
+    title: 'World & Dungeon',
+    content: 'Deploy troops on the 12×12 world map to capture zones. The Dungeon rotates every 30 minutes with new rooms and loot. Patrol is a quick 30-second loot run; Dungeon is the big event.',
+  },
+  {
+    key: 'duels_trade',
+    title: 'Duels & Trade',
+    content: 'Challenge housemates to 1v1 duels with random resource stakes. Use Trade to swap gold, materials, food, and items with icons.',
+  },
+] as const;
+
+export const BUILDING_KEYS = Object.keys(BUILDINGS);
+
+export function isValidBuildingKey(key: string): boolean {
+  return key in BUILDINGS;
+}
+
+export function getUnlockedCrops(upgradeLevels: Record<string, number>): string[] {
+  const slot3 = upgradeLevels['3'] || 0;
+  const base = ['corn', 'wheat'];
+  if (slot3 >= 1) base.push('pumpkin', 'berries');
+  if (slot3 >= 2) base.push('mushrooms', 'herbs');
+  return base;
+}
+
+export function getPickaxeTier(smithyUpgrades: Record<string, number>, commanderTier: number): number {
+  const forgeLevel = smithyUpgrades['1'] || 0;
+  const legendaryForge = smithyUpgrades['5'] || 0;
+  return Math.min(5, Math.max(commanderTier, 1 + forgeLevel + (legendaryForge >= 1 ? 1 : 0)));
 }

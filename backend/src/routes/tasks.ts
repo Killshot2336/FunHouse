@@ -3,7 +3,7 @@ import { isDemoMode, supabase, getWeekStart } from '../lib/supabase.js';
 import { getDemoStore, uuid } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 import { dealHouseholdDamage } from '../lib/rivalAI.js';
-import { awardXpDemo } from './progress.js';
+import { awardXpDemo, awardXpLive } from './progress.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -182,6 +182,7 @@ router.post('/complete/:id', async (req: Request, res: Response) => {
     user.username
   );
 
+  await awardXpLive(user.username, 'chore');
   res.json({ assignment });
 });
 
