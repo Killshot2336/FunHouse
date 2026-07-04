@@ -6,8 +6,11 @@ interface AuthState {
   user: User | null;
   token: string | null;
   demoMode: boolean;
+  hydrated: boolean;
   setAuth: (user: User, token: string, demoMode?: boolean) => void;
   logout: () => void;
+  resetDevice: () => void;
+  setHydrated: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -16,10 +19,23 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       demoMode: true,
+      hydrated: false,
       setAuth: (user, token, demoMode = true) => set({ user, token, demoMode }),
       logout: () => set({ user: null, token: null }),
+      resetDevice: () => {
+        set({ user: null, token: null, demoMode: true });
+        localStorage.removeItem('funhouse-auth');
+        localStorage.removeItem('funhouse-install-dismissed');
+      },
+      setHydrated: () => set({ hydrated: true }),
     }),
-    { name: 'funhouse-auth' }
+    {
+      name: 'funhouse-auth',
+      partialize: (state) => ({ user: state.user, token: state.token, demoMode: state.demoMode }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHydrated();
+      },
+    }
   )
 );
 

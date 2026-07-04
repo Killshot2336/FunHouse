@@ -11,10 +11,17 @@ import { StashPage } from './StashPage';
 type Page = 'dashboard' | 'tasks' | 'cats' | 'finance' | 'bored' | 'stash';
 
 export function Layout() {
-  const { user, demoMode } = useAuthStore();
-  const { message, type, clear } = useNotificationStore();
+  const { user, demoMode, resetDevice } = useAuthStore();
+  const { message, type, clear, show } = useNotificationStore();
   const copy = themeCopy[user!.theme];
   const [page, setPage] = useState<Page>('dashboard');
+  const [showReset, setShowReset] = useState(false);
+
+  const handleResetDevice = () => {
+    resetDevice();
+    setShowReset(false);
+    show('Device reset — tap your name again', 'info');
+  };
 
   const navItems: { key: Page; label: string; icon: string; hidden?: boolean }[] = [
     { key: 'dashboard', label: copy.nav.dashboard, icon: '🏠' },
@@ -38,8 +45,30 @@ export function Layout() {
         </div>
         <div className="flex items-center gap-2">
           {demoMode && <span className="text-xs opacity-40 border border-current px-1 rounded">DEMO</span>}
+          <button
+            onClick={() => setShowReset(true)}
+            className="theme-btn text-xs px-2 py-1 opacity-40 hover:opacity-100"
+            title="Reset device identity"
+          >
+            ⚙️
+          </button>
         </div>
       </header>
+
+      {showReset && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="theme-card p-6 w-full max-w-sm">
+            <h3 className="font-bold mb-2">Wrong person on this device?</h3>
+            <p className="text-sm opacity-70 mb-4">
+              Reset clears this phone&apos;s identity so someone else can tap their name.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setShowReset(false)} className="theme-btn flex-1 py-2">Cancel</button>
+              <button onClick={handleResetDevice} className="theme-btn theme-btn-primary flex-1 py-2">Reset device</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Notification toast */}
       {message && (

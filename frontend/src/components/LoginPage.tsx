@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuthStore } from '../stores';
 import { api } from '../lib/api';
 import { themeCopy, userProfiles } from '../themes/copy';
@@ -12,18 +12,7 @@ const USERS = [
 export function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { user, token, setAuth } = useAuthStore();
-
-  useEffect(() => {
-    if (user && token) return;
-    const stored = localStorage.getItem('funhouse-auth');
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (parsed?.state?.user && parsed?.state?.token) return;
-      } catch { /* continue to picker */ }
-    }
-  }, [user, token]);
+  const { setAuth } = useAuthStore();
 
   const handlePick = async (selected: typeof USERS[0]) => {
     setLoading(true);
