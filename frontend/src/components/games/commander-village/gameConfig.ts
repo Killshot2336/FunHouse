@@ -1,7 +1,7 @@
 export type Patron = 'rick' | 'enclave' | 'karlak';
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export type SkillBranch = 'health' | 'damage' | 'shield';
-export type PackType = 'standard' | 'faction' | 'premium';
+export type PackType = 'standard' | 'faction' | 'premium' | 'weapon_pack' | 'armor_pack' | 'random_pack';
 
 export const BUILDINGS: Record<string, { name: string; icon: string; resource: string }> = {
   farm: { name: 'Farm', icon: '🌾', resource: 'crop' },
@@ -79,10 +79,13 @@ export const RARITY_LABELS: Record<Rarity, string> = {
   mythic: 'Mythical',
 };
 
-export const PACK_TYPES: Record<PackType, { name: string; icon: string; cost: Record<string, number> }> = {
-  standard: { name: 'Standard Pack', icon: '📦', cost: { gold: 100 } },
-  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 } },
-  premium: { name: 'Premium Pack', icon: '💎', cost: { materials: 75 } },
+export const PACK_TYPES: Record<PackType, { name: string; icon: string; cost: Record<string, number>; category: string; desc: string }> = {
+  standard: { name: 'Troop Pack', icon: '📦', cost: { gold: 100 }, category: 'troop', desc: 'Pull a random troop — Grey to Mythical' },
+  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 }, category: 'troop', desc: 'Faction-themed elite troops' },
+  premium: { name: 'Elite Troop Pack', icon: '💎', cost: { materials: 75 }, category: 'troop', desc: 'Better odds for rare troops' },
+  weapon_pack: { name: 'Weapon Pack', icon: '⚔️', cost: { gold: 80 }, category: 'weapon', desc: 'RNG weapons & combat gear' },
+  armor_pack: { name: 'Armor Pack', icon: '🛡️', cost: { gold: 80 }, category: 'armor', desc: 'RNG armor pieces & shields' },
+  random_pack: { name: 'Mystery Pack', icon: '🎲', cost: { gold: 150 }, category: 'mixed', desc: '35% troop · 65% gear — trade or equip' },
 };
 
 export const SKILL_BRANCHES: SkillBranch[] = ['health', 'damage', 'shield'];
@@ -160,6 +163,19 @@ export interface LootItemDef {
   description: string;
   item_type: string;
   use_hint: string;
+}
+
+export function getEquipSlotForItem(itemId: string, items: LootItemDef[]): 'weapon' | 'armor' | 'relic' {
+  const def = items.find((i) => i.id === itemId);
+  if (!def) return 'weapon';
+  if (def.item_type === 'armor') return 'armor';
+  if (def.item_type === 'relic') return 'relic';
+  return 'weapon';
+}
+
+export function canEquipOnCommander(itemId: string, items: LootItemDef[]): boolean {
+  const def = items.find((i) => i.id === itemId);
+  return def?.item_type === 'armor' || def?.item_type === 'weapon' || def?.item_type === 'relic';
 }
 
 export function itemSellPrice(itemId: string, rarity: string, items?: LootItemDef[]): number {

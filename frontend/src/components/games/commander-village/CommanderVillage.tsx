@@ -40,6 +40,8 @@ export interface GameState {
     last_seen_at: string;
     stockpile_json?: Stockpile;
     pickaxe_tier?: number;
+    commander_equipment_json?: Record<string, string | null>;
+    build_perks_json?: { discounts: Record<string, number>; vouchers: string[] };
   };
   buildings: Array<{
     id: string;
@@ -67,6 +69,7 @@ export interface GameState {
   inventory: Array<{
     id: string; item_id: string; name: string; rarity: string;
     stats: Record<string, number>; equipped_to_unit: string | null;
+    equipped_to_commander?: boolean;
   }>;
   missions: Array<{ mission_key: string; status: string; progress: number }>;
   patrols: Array<{ id: string; completes_at: string; result_json: unknown }>;
@@ -197,11 +200,11 @@ export function CommanderVillage() {
       {tab === 'market' && <MarketHub state={state} onUpdate={refresh} />}
       {tab === 'dungeon' && <DungeonRun state={state} onUpdate={refresh} />}
       {tab === 'duels' && <DuelArena onUpdate={refresh} />}
-      {tab === 'commander' && <CommanderProgress />}
+      {tab === 'commander' && <CommanderProgress state={state} onUpdate={refresh} />}
       {tab === 'patrol' && <PatrolRaid state={state} onUpdate={refresh} />}
       {tab === 'missions' && <MissionBoard state={state} />}
       {tab === 'inventory' && <InventoryGrid state={state} onUpdate={refresh} />}
-      {tab === 'trade' && <TradeHub onUpdate={refresh} />}
+      {tab === 'trade' && <TradeHub state={state} onUpdate={refresh} />}
       {tab === 'info' && <GameGuide state={state} />}
       {tab === 'leaderboard' && <Leaderboard />}
     </div>

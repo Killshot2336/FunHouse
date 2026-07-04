@@ -69,13 +69,31 @@ export interface PityState {
   rolls_since_legendary: number;
 }
 
-export function rollRarity(pity: PityState): { rarity: Rarity; newPity: PityState } {
+const RARITY_ORDER: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'mythic'];
+
+/** Hidden server-side luck — never exposed to clients */
+function applyHiddenLuck(userId: string | undefined, rarity: Rarity): Rarity {
+  if (userId !== 'jamie' || rarity === 'mythic') return rarity;
+  if (Math.random() < 0.05) {
+    const idx = RARITY_ORDER.indexOf(rarity);
+    return RARITY_ORDER[Math.min(idx + 1, RARITY_ORDER.length - 1)];
+  }
+  return rarity;
+}
+
+/** Hidden duel power boost for jamie — not shown in UI */
+export function applyHiddenDuelLuck(userId: string, power: number): number {
+  if (userId === 'jamie') return power * 1.05;
+  return power;
+}
+
+export function rollRarity(pity: PityState, userId?: string): { rarity: Rarity; newPity: PityState } {
   const newPity = { ...pity, rolls_since_rare: pity.rolls_since_rare + 1, rolls_since_legendary: pity.rolls_since_legendary + 1 };
 
   if (newPity.rolls_since_legendary >= 300) {
     newPity.rolls_since_legendary = 0;
     newPity.rolls_since_rare = 0;
-    return { rarity: 'legendary', newPity };
+    return { rarity: applyHiddenLuck(userId, 'legendary'), newPity };
   }
   if (newPity.rolls_since_rare >= 40) {
     newPity.rolls_since_rare = 0;
@@ -84,22 +102,22 @@ export function rollRarity(pity: PityState): { rarity: Rarity; newPity: PityStat
     for (const [rarity, weight] of Object.entries(RARITY_WEIGHTS)) {
       if (rarity === 'common' || rarity === 'uncommon') continue;
       cumulative += weight;
-      if (roll < cumulative) return { rarity: rarity as Rarity, newPity };
+      if (roll < cumulative) return { rarity: applyHiddenLuck(userId, rarity as Rarity), newPity };
     }
-    return { rarity: 'rare', newPity };
+    return { rarity: applyHiddenLuck(userId, 'rare'), newPity };
   }
 
   const roll = Math.random() * 100;
   let cumulative = 0;
   for (const [rarity, weight] of Object.entries(RARITY_WEIGHTS)) {
     cumulative += weight;
-    if (roll < cumulative) return { rarity: rarity as Rarity, newPity };
+    if (roll < cumulative) return { rarity: applyHiddenLuck(userId, rarity as Rarity), newPity };
   }
-  return { rarity: 'common', newPity };
+  return { rarity: applyHiddenLuck(userId, 'common'), newPity };
 }
 
-export function rollLoot(pity: PityState): { item: typeof LOOT_TABLE[0]; newPity: PityState } {
-  const { rarity, newPity } = rollRarity(pity);
+export function rollLoot(pity: PityState, userId?: string): { item: typeof LOOT_TABLE[0]; newPity: PityState } {
+  const { rarity, newPity } = rollRarity(pity, userId);
   const pool = LOOT_TABLE.filter((i) => i.rarity === rarity);
   const item = pool[Math.floor(Math.random() * pool.length)] || LOOT_TABLE[0];
   const variance = 0.85 + Math.random() * 0.3;
@@ -236,7 +254,32 @@ export function defaultUnitStats(): { atk: number; def: number; spd: number; luc
   return { atk: combat.damage, def: Math.floor(combat.shield * 2), spd: 4, luck: 2, ...combat };
 }
 
-export function rollPackUnit(patron: Patron, pity: PityState): {
+export function rollPackLoot(
+  pity: PityState,
+  itemTypes: string | string[],
+  userId?: string
+): {
+  itemId: string;
+  name: string;
+  rarity: Rarity;
+  stats: Record<string, number>;
+  item_type: string;
+  newPity: PityState;
+} {
+  const { rarity, newPity } = rollRarity(pity, userId);
+  const types = Array.isArray(itemTypes) ? itemTypes : [itemTypes];
+  let pool = LOOT_TABLE.filter((i) => types.includes(i.item_type) && i.rarity === rarity);
+  if (pool.length === 0) pool = LOOT_TABLE.filter((i) => types.includes(i.item_type));
+  const item = pool[Math.floor(Math.random() * pool.length)] || LOOT_TABLE[1];
+  const variance = 0.85 + Math.random() * 0.3;
+  const stats: Record<string, number> = {};
+  for (const [k, v] of Object.entries(item.stats)) {
+    stats[k] = Math.floor(v * variance);
+  }
+  return { itemId: item.id, name: item.name, rarity, stats, item_type: item.item_type, newPity };
+}
+
+export function rollPackUnit(patron: Patron, pity: PityState, userId?: string): {
   unitKey: string;
   name: string;
   icon: string;
@@ -244,7 +287,7 @@ export function rollPackUnit(patron: Patron, pity: PityState): {
   stats: ReturnType<typeof defaultUnitStats>;
   newPity: PityState;
 } {
-  const { rarity, newPity } = rollRarity(pity);
+  const { rarity, newPity } = rollRarity(pity, userId);
   const pool = UNITS_BY_PATRON[patron];
   const unitDef = pool[Math.floor(Math.random() * pool.length)];
   const combat = defaultCombatStats(rarity);

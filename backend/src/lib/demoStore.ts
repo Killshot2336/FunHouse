@@ -34,6 +34,8 @@ interface DemoStore {
     story_chapter: number; story_seen: boolean; grid_size: number; last_seen_at: string;
     stockpile_json?: { crops: Record<string, number>; ores: Record<string, number>; wood: number; stone: number };
     pickaxe_tier?: number;
+    commander_equipment_json?: Record<string, string | null>;
+    build_perks_json?: { discounts: Record<string, number>; vouchers: string[] };
   }>;
   gameBuildings: Array<{
     id: string; user_id: string; building_key: string; grid_x: number; grid_y: number; level: number;
@@ -48,6 +50,7 @@ interface DemoStore {
   gameInventory: Array<{
     id: string; user_id: string; item_id: string; name: string; rarity: string;
     stats: Record<string, number>; quantity: number; equipped_to_unit: string | null;
+    equipped_to_commander?: boolean;
   }>;
   gameMissions: Array<{ user_id: string; mission_key: string; status: string; progress: number }>;
   gamePity: Array<{ user_id: string; rolls_since_rare: number; rolls_since_legendary: number }>;

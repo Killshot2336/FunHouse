@@ -188,7 +188,7 @@ export const LOOT_TABLE: LootItemDef[] = [
   { id: 'basic_gear', name: 'Basic Gear', rarity: 'common', sellValue: 10, stats: { atk: 1 }, description: 'Standard-issue equipment for new recruits.', item_type: 'weapon', use_hint: 'Equip on troop for +ATK' },
   { id: 'food_crate', name: 'Food Crate', rarity: 'common', sellValue: 8, stats: {}, description: 'Preserved rations for your village.', item_type: 'consumable', use_hint: 'Sell at Market or trade' },
   { id: 'unit_shard', name: 'Unit Shard', rarity: 'uncommon', sellValue: 25, stats: { atk: 3 }, description: 'Crystallized essence of a fallen warrior.', item_type: 'shard', use_hint: 'Equip on troop for +ATK' },
-  { id: 'blueprint', name: 'Building Blueprint', rarity: 'uncommon', sellValue: 30, stats: {}, description: 'Architectural plans for village expansion.', item_type: 'blueprint', use_hint: 'Used in building upgrades' },
+  { id: 'blueprint', name: 'Building Blueprint', rarity: 'uncommon', sellValue: 30, stats: {}, description: 'Architectural plans for village expansion.', item_type: 'blueprint', use_hint: 'Redeem for a building discount or free building' },
   { id: 'named_weapon', name: 'Named Weapon', rarity: 'rare', sellValue: 75, stats: { atk: 8, spd: 2 }, description: 'A weapon with a storied battle history.', item_type: 'weapon', use_hint: 'Equip on troop for +ATK and +SPD' },
   { id: 'rare_unlock', name: 'Rare Unit Unlock', rarity: 'rare', sellValue: 100, stats: { atk: 5, def: 5 }, description: 'Unlocks a rare troop variant.', item_type: 'unlock', use_hint: 'Recruit special units from Army tab' },
   { id: 'set_piece', name: 'Set Armor Piece', rarity: 'epic', sellValue: 200, stats: { atk: 12, def: 10 }, description: 'Part of a matched armor set.', item_type: 'armor', use_hint: 'Equip on troop for +ATK and +DEF' },
@@ -264,12 +264,47 @@ export const RARITY_STAT_MULT: Record<Rarity, number> = {
 };
 
 export const PACK_TYPES = {
-  standard: { name: 'Standard Pack', icon: '📦', cost: { gold: 100 } },
-  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 } },
-  premium: { name: 'Premium Pack', icon: '💎', cost: { materials: 75 } },
+  standard: { name: 'Troop Pack', icon: '📦', cost: { gold: 100 }, category: 'troop', desc: 'Pull a random troop — Grey to Mythical' },
+  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 }, category: 'troop', desc: 'Faction-themed elite troops' },
+  premium: { name: 'Elite Troop Pack', icon: '💎', cost: { materials: 75 }, category: 'troop', desc: 'Better odds for rare troops' },
+  weapon_pack: { name: 'Weapon Pack', icon: '⚔️', cost: { gold: 80 }, category: 'weapon', desc: 'RNG weapons & combat gear' },
+  armor_pack: { name: 'Armor Pack', icon: '🛡️', cost: { gold: 80 }, category: 'armor', desc: 'RNG armor pieces & shields' },
+  random_pack: { name: 'Mystery Pack', icon: '🎲', cost: { gold: 150 }, category: 'mixed', desc: '35% troop · 65% gear — trade or equip pulls' },
 } as const;
 
 export type PackType = keyof typeof PACK_TYPES;
+export type PackCategory = 'troop' | 'weapon' | 'armor' | 'mixed';
+
+export const BLUEPRINT_BUILDINGS: Record<Rarity, string[]> = {
+  common: ['farm', 'mine'],
+  uncommon: ['market', 'greenhouse', 'lumber_mill'],
+  rare: ['quarry', 'smithy', 'barracks'],
+  epic: ['library', 'shrine', 'warehouse'],
+  legendary: ['workshop', 'tavern', 'hq'],
+  mythic: ['hq', 'shrine', 'workshop'],
+};
+
+export const BLUEPRINT_DISCOUNT: Record<Rarity, number> = {
+  common: 0.1,
+  uncommon: 0.15,
+  rare: 0.25,
+  epic: 0.35,
+  legendary: 0.45,
+  mythic: 0.55,
+};
+
+export function getEquipSlotForItem(itemId: string): 'weapon' | 'armor' | 'relic' {
+  const def = LOOT_TABLE.find((i) => i.id === itemId);
+  if (!def) return 'weapon';
+  if (def.item_type === 'armor') return 'armor';
+  if (def.item_type === 'relic') return 'relic';
+  return 'weapon';
+}
+
+export function canEquipOnCommander(itemId: string): boolean {
+  const def = LOOT_TABLE.find((i) => i.id === itemId);
+  return def?.item_type === 'armor' || def?.item_type === 'weapon' || def?.item_type === 'relic';
+}
 
 export const SKILL_BRANCHES = ['health', 'damage', 'shield'] as const;
 export type SkillBranch = typeof SKILL_BRANCHES[number];

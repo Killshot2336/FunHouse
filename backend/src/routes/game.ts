@@ -25,9 +25,14 @@ import {
   isValidBuildingKey,
   getUnlockedCrops,
   getPickaxeTier,
+  getEquipSlotForItem,
+  canEquipOnCommander,
+  BLUEPRINT_BUILDINGS,
+  BLUEPRINT_DISCOUNT,
   type Patron,
   type PackType,
   type SkillBranch,
+  type Rarity,
 } from '../lib/gameConfig.js';
 import {
   calcOfflineResources,
@@ -36,9 +41,11 @@ import {
   mergeStockpile,
   rollLoot,
   rollPackUnit,
+  rollPackLoot,
   defaultUnitStats,
   applyItemStatsToUnit,
   formatItemStatBonus,
+  applyHiddenDuelLuck,
 } from '../lib/gameEngine.js';
 import {
   itemSellPrice,
@@ -55,7 +62,7 @@ import {
   parseStockpile,
 } from '../lib/economyEngine.js';
 import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from '../lib/progressEngine.js';
-import { awardXpDemo } from './progress.js';
+import { awardXpDemo, awardXpLive } from './progress.js';
 import * as gameDb from '../lib/gameSupabase.js';
 import {
   type TradeResources,
@@ -89,6 +96,8 @@ function getOrCreateCommander(store: ReturnType<typeof getDemoStore>, userId: st
       last_seen_at: new Date().toISOString(),
       stockpile_json: parseStockpile(null),
       pickaxe_tier: 1,
+      commander_equipment_json: { weapon: null, armor: null, relic: null },
+      build_perks_json: { discounts: {}, vouchers: [] },
     };
     store.gameCommanders.push(cmd);
     for (const m of MISSIONS) {
@@ -243,6 +252,7 @@ router.post('/build', async (req: Request, res: Response) => {
 
   try {
     const result = await gameDb.placeBuilding(supabase, user.username, building_key, grid_x, grid_y);
+    await awardXpLive(user.username, 'build');
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -283,6 +293,7 @@ router.post('/recruit', async (req: Request, res: Response) => {
 
   try {
     const result = await gameDb.recruitUnit(supabase, user.username, unit_key);
+    await awardXpLive(user.username, 'recruit');
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -384,7 +395,7 @@ router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
     const drops = [];
     const numRolls = 1 + Math.floor(Math.random() * 2);
     for (let i = 0; i < numRolls; i++) {
-      const { item, newPity } = rollLoot(pity);
+      const { item, newPity } = rollLoot(pity, user.username);
       pity.rolls_since_rare = newPity.rolls_since_rare;
       pity.rolls_since_legendary = newPity.rolls_since_legendary;
       const inv = {
@@ -396,6 +407,7 @@ router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
         stats: item.stats,
         quantity: 1,
         equipped_to_unit: null,
+        equipped_to_commander: false,
       };
       store.gameInventory.push(inv);
       drops.push(inv);
@@ -405,11 +417,13 @@ router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
     cmd.gold += 10 + Math.floor(Math.random() * 20);
     patrol.result_json = { drops };
     updateMissionProgress(store, user.username, 'patrol', 1);
+    awardXpDemo(store, user.username, 'patrol');
     return res.json({ drops, commander: cmd, pity });
   }
 
   try {
     const result = await gameDb.claimPatrol(supabase, user.username, patrolId);
+    await awardXpLive(user.username, 'patrol');
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -418,7 +432,7 @@ router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
 
 router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
-  const { unit_id, slot } = req.body;
+  const { unit_id, slot: reqSlot } = req.body;
   const itemId = String(req.params.id);
 
   if (isDemoMode || !supabase) {
@@ -428,6 +442,7 @@ router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
     if (!item || !unit) return res.status(404).json({ error: 'Not found' });
     if (item.equipped_to_unit) return res.status(400).json({ error: 'Already equipped' });
 
+    const slot = reqSlot || getEquipSlotForItem(item.item_id);
     item.equipped_to_unit = unit_id;
     unit.equipment[slot] = item.id;
     unit.stats = applyItemStatsToUnit(unit.stats as Record<string, unknown>, item.stats);
@@ -438,11 +453,95 @@ router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
       unit,
       bonus: formatItemStatBonus(item.stats),
       unit_name: unitDef?.name || unit.unit_key,
+      slot,
     });
   }
 
   try {
-    const result = await gameDb.equipItem(supabase, user.username, itemId, unit_id, slot);
+    const result = await gameDb.equipItem(supabase, user.username, itemId, unit_id, reqSlot);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
+router.post('/commander/equip', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { item_id, slot } = req.body as { item_id: string; slot?: string };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const item = store.gameInventory.find((i) => i.id === item_id && i.user_id === user.username);
+    if (!item) return res.status(404).json({ error: 'Not found' });
+    if (item.equipped_to_unit) return res.status(400).json({ error: 'Already equipped' });
+    if (!canEquipOnCommander(item.item_id)) return res.status(400).json({ error: 'Cannot equip on commander' });
+
+    const cmd = getOrCreateCommander(store, user.username);
+    const equipSlot = slot || getEquipSlotForItem(item.item_id);
+    const equipment = (cmd.commander_equipment_json || { weapon: null, armor: null, relic: null }) as Record<string, string | null>;
+    const prev = equipment[equipSlot];
+    if (prev) {
+      const prevItem = store.gameInventory.find((i) => i.id === prev);
+      if (prevItem) prevItem.equipped_to_commander = false;
+    }
+    equipment[equipSlot] = item_id;
+    cmd.commander_equipment_json = equipment;
+    item.equipped_to_commander = true;
+    return res.json({
+      item,
+      slot: equipSlot,
+      bonus: formatItemStatBonus(item.stats),
+      commander_equipment: equipment,
+    });
+  }
+
+  try {
+    const result = await gameDb.equipCommanderItem(supabase, user.username, item_id, slot);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
+router.post('/inventory/:id/redeem', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const itemId = String(req.params.id);
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const idx = store.gameInventory.findIndex((i) => i.id === itemId && i.user_id === user.username);
+    if (idx < 0) return res.status(404).json({ error: 'Not found' });
+    const item = store.gameInventory[idx];
+    if (item.item_id !== 'blueprint') return res.status(400).json({ error: 'Not a blueprint' });
+    if (item.equipped_to_unit) return res.status(400).json({ error: 'Unequip first' });
+
+    const rarity = item.rarity as Rarity;
+    const pool = BLUEPRINT_BUILDINGS[rarity] || BLUEPRINT_BUILDINGS.uncommon;
+    const buildingKey = pool[Math.floor(Math.random() * pool.length)];
+    const cmd = getOrCreateCommander(store, user.username);
+    const perks = cmd.build_perks_json || { discounts: {}, vouchers: [] };
+    const isDiscount = Math.random() < 0.5;
+    if (isDiscount) {
+      const discount = BLUEPRINT_DISCOUNT[rarity] || 0.15;
+      perks.discounts[buildingKey] = discount;
+    } else {
+      perks.vouchers.push(buildingKey);
+    }
+    cmd.build_perks_json = perks;
+    store.gameInventory.splice(idx, 1);
+    const buildingDef = BUILDINGS[buildingKey as keyof typeof BUILDINGS];
+    return res.json({
+      result: isDiscount
+        ? { type: 'discount', building_key: buildingKey, value: BLUEPRINT_DISCOUNT[rarity] || 0.15 }
+        : { type: 'building', building_key: buildingKey, value: 1 },
+      building_name: buildingDef?.name || buildingKey,
+      building_icon: buildingDef?.icon || '🏗️',
+      build_perks: perks,
+    });
+  }
+
+  try {
+    const result = await gameDb.redeemBlueprint(supabase, user.username, itemId);
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -520,6 +619,15 @@ router.post('/trades', async (req: Request, res: Response) => {
     if (hasTradeContent(offerBundle) && !hasEnoughResources(fromCmd, offerBundle)) {
       return res.status(400).json({ error: 'Not enough resources to offer' });
     }
+    if (offerBundle.item_ids?.length) {
+      for (const id of offerBundle.item_ids) {
+        const item = store.gameInventory.find((i) => i.id === id && i.user_id === user.username);
+        if (!item) return res.status(400).json({ error: 'Trade includes item you do not own' });
+        if (item.equipped_to_unit || item.equipped_to_commander) {
+          return res.status(400).json({ error: 'Cannot trade equipped items' });
+        }
+      }
+    }
     const trade = {
       id: uuid(), from_user: user.username, to_user,
       offer_json: { ...offerBundle, description: tradeDescription(offerBundle) },
@@ -566,22 +674,32 @@ router.post('/trades/:id/accept', async (req: Request, res: Response) => {
     if (offer.item_ids) {
       for (const id of offer.item_ids) {
         const item = store.gameInventory.find((i) => i.id === id && i.user_id === trade.from_user);
-        if (item) item.user_id = trade.to_user;
+        if (!item) return res.status(400).json({ error: 'Offerer lacks items' });
+        if (item.equipped_to_unit || item.equipped_to_commander) {
+          return res.status(400).json({ error: 'Cannot trade equipped items' });
+        }
+        item.user_id = trade.to_user;
       }
     }
     if (request.item_ids) {
       for (const id of request.item_ids) {
         const item = store.gameInventory.find((i) => i.id === id && i.user_id === trade.to_user);
-        if (item) item.user_id = trade.from_user;
+        if (!item) return res.status(400).json({ error: 'You lack requested items' });
+        if (item.equipped_to_unit || item.equipped_to_commander) {
+          return res.status(400).json({ error: 'Cannot trade equipped items' });
+        }
+        item.user_id = trade.from_user;
       }
     }
 
     trade.status = 'accepted';
+    awardXpDemo(store, user.username, 'trade');
     return res.json({ trade, success: true });
   }
 
   try {
     const result = await gameDb.acceptTrade(supabase, user.username, tradeId);
+    await awardXpLive(user.username, 'trade');
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -616,6 +734,7 @@ router.post('/packs/open', async (req: Request, res: Response) => {
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
+    const category = pack.category || 'troop';
     const resCmd: CommanderResources = { gold: cmd.gold, materials: cmd.materials, food: cmd.food, faction_currency: cmd.faction_currency };
     const afterCost = deductResources(resCmd, pack.cost);
     if (!afterCost) return res.status(400).json({ error: 'Not enough resources' });
@@ -627,14 +746,38 @@ router.post('/packs/open', async (req: Request, res: Response) => {
     let pity = store.gamePity.find((p) => p.user_id === user.username);
     if (!pity) { pity = { user_id: user.username, rolls_since_rare: 0, rolls_since_legendary: 0 }; store.gamePity.push(pity); }
 
-    const rolled = rollPackUnit(cmd.patron as Patron, pity);
+    const pullTroop = category === 'troop' || (category === 'mixed' && Math.random() < 0.35);
+
+    if (!pullTroop) {
+      const itemTypes = category === 'weapon' ? 'weapon' : category === 'armor' ? 'armor' : ['weapon', 'armor', 'relic'];
+      const rolled = rollPackLoot(pity, itemTypes, user.username);
+      pity.rolls_since_rare = rolled.newPity.rolls_since_rare;
+      pity.rolls_since_legendary = rolled.newPity.rolls_since_legendary;
+      const inv = {
+        id: uuid(),
+        user_id: user.username,
+        item_id: rolled.itemId,
+        name: rolled.name,
+        rarity: rolled.rarity,
+        stats: rolled.stats,
+        quantity: 1,
+        equipped_to_unit: null,
+        equipped_to_commander: false,
+      };
+      store.gameInventory.push(inv);
+      awardXpDemo(store, user.username, 'pack_open');
+      return res.json({ result_type: 'item', inventory_item: inv, roll: rolled, commander: cmd, pity });
+    }
+
+    const rolled = rollPackUnit(cmd.patron as Patron, pity, user.username);
     pity.rolls_since_rare = rolled.newPity.rolls_since_rare;
     pity.rolls_since_legendary = rolled.newPity.rolls_since_legendary;
 
     const units = store.gameUnits.filter((u) => u.user_id === user.username);
     if (units.length >= 6) {
       cmd.gold += 50;
-      return res.json({ full: true, refund: 50, roll: rolled, commander: cmd });
+      awardXpDemo(store, user.username, 'pack_open');
+      return res.json({ result_type: 'troop', full: true, refund: 50, roll: rolled, commander: cmd, pity });
     }
 
     const unit = {
@@ -650,11 +793,12 @@ router.post('/packs/open', async (req: Request, res: Response) => {
     store.gameUnits.push(unit);
     refreshPower(store, user.username);
     awardXpDemo(store, user.username, 'pack_open');
-    return res.json({ unit, roll: rolled, commander: cmd, pity });
+    return res.json({ result_type: 'troop', unit, roll: rolled, commander: cmd, pity });
   }
 
   try {
     const result = await gameDb.openPack(supabase, user.username, pack_type);
+    await awardXpLive(user.username, 'pack_open');
     res.json(result);
   } catch (err) {
     handleGameError(res, err);
@@ -748,6 +892,7 @@ router.post('/expand-grid', async (req: Request, res: Response) => {
   }
   try {
     const result = await gameDb.expandGrid(supabase, user.username);
+    await awardXpLive(user.username, 'build');
     res.json(result);
   } catch (err) { handleGameError(res, err); }
 });
@@ -828,6 +973,7 @@ router.post('/zones/:id/attack', async (req: Request, res: Response) => {
   }
   try {
     const result = await gameDb.attackZone(supabase, user.username, zoneId, unit_ids);
+    if (result.won) await awardXpLive(user.username, 'zone_capture');
     res.json(result);
   } catch (err) { handleGameError(res, err); }
 });
@@ -881,8 +1027,8 @@ router.post('/duels/:id/accept', async (req: Request, res: Response) => {
 
     const chUnits = store.gameUnits.filter((u) => u.user_id === duel.challenger_id);
     const defUnits = store.gameUnits.filter((u) => u.user_id === duel.defender_id);
-    const chPower = chUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
-    const defPower = defUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    const chPower = applyHiddenDuelLuck(duel.challenger_id, chUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0));
+    const defPower = applyHiddenDuelLuck(duel.defender_id, defUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0));
     const variance = 0.95 + Math.random() * 0.1;
     const challengerWins = chPower * variance > defPower;
 
@@ -915,6 +1061,8 @@ router.post('/duels/:id/accept', async (req: Request, res: Response) => {
   }
   try {
     const result = await gameDb.acceptDuel(supabase, user.username, duelId);
+    await awardXpLive(result.winner_id, 'duel_win');
+    await awardXpLive(result.challengerWins ? result.duel.defender_id : result.duel.challenger_id, 'duel_lose');
     res.json(result);
   } catch (err) { handleGameError(res, err); }
 });
