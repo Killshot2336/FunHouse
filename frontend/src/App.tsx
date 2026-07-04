@@ -9,8 +9,14 @@ import { CinematicOverlay } from './components/effects/CinematicOverlay';
 import { api } from './lib/api';
 
 export default function App() {
-  const { user, token, hydrated, setAuth, resetDevice } = useAuthStore();
+  const { user, token, hydrated, setAuth, resetDevice, setHydrated } = useAuthStore();
   const [checking, setChecking] = useState(true);
+
+  // Fallback: never stay stuck on loading if zustand hydration hangs
+  useEffect(() => {
+    const t = setTimeout(() => setHydrated(), 1500);
+    return () => clearTimeout(t);
+  }, [setHydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -37,9 +43,9 @@ export default function App() {
 
   if (!hydrated || checking) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
+      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <motion.p
-          className="text-sm tracking-[0.3em] glow-text"
+          style={{ color: '#39ff14', fontSize: 14, letterSpacing: '0.3em', fontFamily: 'monospace' }}
           animate={{ opacity: [0.3, 1, 0.3] }}
           transition={{ repeat: Infinity, duration: 2 }}
         >

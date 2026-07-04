@@ -12,8 +12,26 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>Funhouse</title>
+    <style>
+      html, body { margin: 0; background: #0a0a0a; }
+      #root:empty::before {
+        content: 'LOADING FUNHOUSE...';
+        display: flex;
+        min-height: 100vh;
+        align-items: center;
+        justify-content: center;
+        color: #39ff14;
+        font: 14px/1.4 monospace;
+        letter-spacing: 0.3em;
+      }
+    </style>
   </head>
   <body>
+    <noscript>
+      <p style="color:#39ff14;background:#0a0a0a;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:monospace;">
+        Funhouse needs JavaScript enabled.
+      </p>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

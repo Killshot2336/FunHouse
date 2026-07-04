@@ -1,6 +1,11 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { User, UserTheme } from '../themes/copy';
+
+const safeStorage = createJSONStorage(() => localStorage, {
+  reviver: undefined,
+  replacer: undefined,
+});
 
 interface AuthState {
   user: User | null;
@@ -23,7 +28,7 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (user, token, demoMode = true) => set({ user, token, demoMode }),
       logout: () => set({ user: null, token: null }),
       resetDevice: () => {
-        set({ user: null, token: null, demoMode: true });
+        set({ user: null, token: null, demoMode: true, hydrated: true });
         localStorage.removeItem('funhouse-auth');
         localStorage.removeItem('funhouse-install-dismissed');
       },
@@ -31,8 +36,13 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'funhouse-auth',
+      storage: safeStorage,
       partialize: (state) => ({ user: state.user, token: state.token, demoMode: state.demoMode }),
-      onRehydrateStorage: () => (state) => {
+      onRehydrateStorage: () => (state, err) => {
+        if (err) {
+          localStorage.removeItem('funhouse-auth');
+        }
+        useAuthStore.setState({ hydrated: true });
         state?.setHydrated();
       },
     }
