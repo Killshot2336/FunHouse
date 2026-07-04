@@ -3,6 +3,7 @@ import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { CROP_TYPES, ORE_TYPES } from './gameConfig';
 import { useCountdown, nextHourIso } from './useCountdown';
+import { mergeStockpileDisplay } from './productionFormat';
 import type { GameState } from './CommanderVillage';
 
 interface MarketHubProps {
@@ -14,7 +15,10 @@ export function MarketHub({ state, onUpdate }: MarketHubProps) {
   const { user, token } = useAuthStore();
   const notify = useNotificationStore((s) => s.show);
   const [selling, setSelling] = useState<string | null>(null);
-  const stockpile = state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 };
+  const stockpile = mergeStockpileDisplay(
+    state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 },
+    state.pending_stockpile
+  );
   const market = state.market;
 
   const sell = async (resourceType: string, amount: number) => {
@@ -55,6 +59,9 @@ export function MarketHub({ state, onUpdate }: MarketHubProps) {
         <h3 className="text-sm font-bold mb-1">Hourly Market</h3>
         <p className="text-xs opacity-60">
           Prices reset in {countdownLabel} · Hot crop: {market?.hot_crop || '—'} 🔥
+        </p>
+        <p className="text-[10px] opacity-50 mt-1">
+          Harvest crops from your farm first, then sell here. Pending crops show in your totals.
         </p>
       </div>
 

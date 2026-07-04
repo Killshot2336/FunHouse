@@ -4,7 +4,7 @@ import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { BUILDINGS, BUILDING_COSTS, buildingCost, getUnlockedCrops, CROP_TYPES } from './gameConfig';
 import { BuildingUpgrades } from './BuildingUpgrades';
-import { formatMinSec } from './productionFormat';
+import { formatMinSec, mergeStockpileDisplay } from './productionFormat';
 import type { GameState } from './CommanderVillage';
 
 const RESOURCE_ICONS: Record<string, string> = {
@@ -30,6 +30,8 @@ interface BuildingPanelProps {
   upgrading: boolean;
 }
 
+const STOCKPILE_BUILDINGS = ['farm', 'greenhouse', 'lumber_mill', 'quarry'] as const;
+
 export function BuildingPanel({
   state, x, y, liveAmount, ratePerMin, elapsedSec, onUpdate, onLevelUpgrade, onClose, upgrading,
 }: BuildingPanelProps) {
@@ -37,6 +39,11 @@ export function BuildingPanel({
   const notify = useNotificationStore((s) => s.show);
   const [collecting, setCollecting] = useState(false);
   const building = state.buildings.find((b) => b.grid_x === x && b.grid_y === y);
+
+  const stockpile = mergeStockpileDisplay(
+    state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 },
+    state.pending_stockpile
+  );
 
   if (!building) {
     return (
@@ -65,9 +72,33 @@ export function BuildingPanel({
   };
   const isCropBuilding = ['farm', 'greenhouse'].includes(building.building_key);
   const unlockedCrops = getUnlockedCrops(meta.upgrades || {});
+  const activeCrop = meta.crop || 'corn';
+  const cropQty = isCropBuilding ? (stockpile.crops[activeCrop] || 0) : 0;
+  const pendingCrop = isCropBuilding ? (state.pending_stockpile?.crops[activeCrop] || 0) : 0;
+  const needsHarvest = STOCKPILE_BUILDINGS.includes(building.building_key as typeof STOCKPILE_BUILDINGS[number]);
+
+  const harvestAll = async () => {
+    setCollecting(true);
+    try {
+      await api('/game/collect', { method: 'POST' }, token);
+      playSound(user!.theme, 'craft');
+      notify('Harvested! Crops & resources added to stockpile.', 'success');
+      onUpdate();
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Harvest failed', 'error');
+    }
+    setCollecting(false);
+  };
 
   const setCrop = async (crop: string) => {
+    if (!unlockedCrops.includes(crop)) {
+      notify('Upgrade Crop Slot (slot 3) to unlock more crops', 'info');
+      return;
+    }
     try {
+      if (pendingCrop > 0 || liveAmount >= 0.5) {
+        await api('/game/collect', { method: 'POST' }, token);
+      }
       await api(`/game/buildings/${building.id}/crop`, {
         method: 'POST',
         body: JSON.stringify({ crop }),
@@ -96,6 +127,15 @@ export function BuildingPanel({
     setCollecting(false);
   };
 
+  const harvestLabel =
+    building.building_key === 'farm' || building.building_key === 'greenhouse'
+      ? '🌾 Harvest Crops'
+      : building.building_key === 'lumber_mill'
+        ? '🪵 Harvest Wood'
+        : building.building_key === 'quarry'
+          ? '🪨 Harvest Stone'
+          : 'Harvest';
+
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
@@ -114,36 +154,63 @@ export function BuildingPanel({
       </div>
 
       <div className="p-3 rounded-lg border border-current/20 bg-black/20">
-        <div className="text-xs opacity-60 mb-1">Idle production</div>
+        <div className="text-xs opacity-60 mb-1">Growing / producing</div>
         <div className="text-lg font-bold glow-text">
           +{liveAmount.toFixed(1)} {resourceIcon}
+          {isCropBuilding && (
+            <span className="text-sm font-normal opacity-70 ml-1">
+              ({CROP_TYPES.find((c) => c.key === activeCrop)?.name || activeCrop})
+            </span>
+          )}
         </div>
-        <div className="text-xs opacity-50">+{ratePerMin.toFixed(2)}/min · building for {formatMinSec(elapsedSec)}</div>
-        {isCropBuilding && meta.crop && (
-          <div className="text-xs mt-1 opacity-60">
-            Growing: {CROP_TYPES.find((c) => c.key === meta.crop)?.icon} {meta.crop}
+        <div className="text-xs opacity-50">+{ratePerMin.toFixed(2)}/min · running {formatMinSec(elapsedSec)}</div>
+        {isCropBuilding && (
+          <div className="text-xs mt-2 opacity-70">
+            Stockpile: <strong>{cropQty}</strong> {activeCrop}
+            {pendingCrop > 0 && <span className="text-green-400"> (+{pendingCrop} ready to harvest)</span>}
           </div>
+        )}
+        {building.building_key === 'lumber_mill' && (
+          <div className="text-xs mt-2 opacity-70">Stockpile: <strong>{stockpile.wood}</strong> wood</div>
+        )}
+        {building.building_key === 'quarry' && (
+          <div className="text-xs mt-2 opacity-70">Stockpile: <strong>{stockpile.stone}</strong> stone</div>
         )}
       </div>
 
       {isCropBuilding && (
         <div>
           <div className="text-xs font-bold mb-1">Crop Type</div>
+          <p className="text-[10px] opacity-50 mb-2">
+            Upgrade slot 3 to unlock pumpkin/berries (Lv1) and mushrooms/herbs (Lv2)
+          </p>
           <div className="flex flex-wrap gap-1">
-            {unlockedCrops.map((cropKey) => {
-              const crop = CROP_TYPES.find((c) => c.key === cropKey);
+            {CROP_TYPES.map((crop) => {
+              const unlocked = unlockedCrops.includes(crop.key);
               return (
                 <button
-                  key={cropKey}
-                  onClick={() => setCrop(cropKey)}
-                  className={`theme-btn text-xs px-2 py-1 ${meta.crop === cropKey ? 'theme-btn-primary' : ''}`}
+                  key={crop.key}
+                  disabled={!unlocked}
+                  onClick={() => setCrop(crop.key)}
+                  className={`theme-btn text-xs px-2 py-1 ${activeCrop === crop.key ? 'theme-btn-primary' : ''} ${!unlocked ? 'opacity-30' : ''}`}
+                  title={unlocked ? crop.name : 'Upgrade Crop Slot to unlock'}
                 >
-                  {crop?.icon} {crop?.name}
+                  {crop.icon} {crop.name}{!unlocked ? ' 🔒' : ''}
                 </button>
               );
             })}
           </div>
         </div>
+      )}
+
+      {needsHarvest && (
+        <button
+          onClick={harvestAll}
+          disabled={collecting}
+          className="theme-btn theme-btn-primary w-full text-sm py-2"
+        >
+          {collecting ? 'Harvesting...' : harvestLabel}
+        </button>
       )}
 
       {building.building_key === 'mine' && (

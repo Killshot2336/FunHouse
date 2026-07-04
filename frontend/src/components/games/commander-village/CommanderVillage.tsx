@@ -16,6 +16,7 @@ import { CommanderProgress } from './CommanderProgress';
 import { MarketHub } from './MarketHub';
 import { DungeonRun } from './DungeonRun';
 import { GameGuide } from './GameGuide';
+import { mergeStockpileDisplay } from './productionFormat';
 import type { Rarity, LootItemDef } from './gameConfig';
 
 export interface Stockpile {
@@ -57,9 +58,11 @@ export interface GameState {
     grid_x: number;
     grid_y: number;
     resource: 'gold' | 'materials' | 'food' | 'faction' | 'crop' | 'wood' | 'stone';
+    crop?: string;
     amount: number;
     ratePerHour: number;
   }>;
+  pending_stockpile?: Stockpile;
   units: Array<{
     id: string; unit_key: string; slot_index: number; rarity?: Rarity;
     stats: Record<string, unknown>;
@@ -146,10 +149,12 @@ export function CommanderVillage() {
     );
   }
 
-  const stockpile = state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 };
+  const stockpile = mergeStockpileDisplay(
+    state.commander.stockpile_json || { crops: {}, ores: {}, wood: 0, stone: 0 },
+    state.pending_stockpile
+  );
   const cropTotal = Object.values(stockpile.crops).reduce((a, b) => a + b, 0);
   const oreTotal = Object.values(stockpile.ores).reduce((a, b) => a + b, 0);
-  const totalFood = state.commander.food + cropTotal;
 
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: 'village', label: 'Village', icon: '🏘️' },
@@ -178,8 +183,10 @@ export function CommanderVillage() {
         <div className="flex flex-wrap gap-2 text-xs">
           <span>🪙 {state.commander.gold}</span>
           <span>⛏️ {state.commander.materials}</span>
-          <span>🌾 {totalFood}</span>
-          <span>💎 {oreTotal}</span>
+          <span>🌾 {cropTotal} crops</span>
+          <span>💎 {oreTotal} ore</span>
+          <span>🪵 {stockpile.wood}</span>
+          <span>🪨 {stockpile.stone}</span>
           <span>⭐ {state.commander.faction_currency}</span>
           {(state.commander.pickaxe_tier || 1) > 1 && <span>⛏️T{state.commander.pickaxe_tier}</span>}
         </div>

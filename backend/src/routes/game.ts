@@ -71,6 +71,7 @@ import {
   scaleItemStats,
   type CommanderBonuses,
 } from '../lib/commanderSkills.js';
+import { getMarketSellBonus } from '../lib/buildingProduction.js';
 import { awardXpDemo, awardXpLive } from './progress.js';
 import * as gameDb from '../lib/gameSupabase.js';
 import {
@@ -202,10 +203,20 @@ router.get('/state', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     refreshPower(store, user.username);
+    const buildings = store.gameBuildings.filter((b) => b.user_id === user.username);
+    const bonuses = loadBonusesDemo(store, user.username);
+    const pending_stockpile = calcStockpileAccrual(
+      buildings,
+      cmd.last_seen_at,
+      8,
+      bonuses.farmYield,
+      bonuses.cropSpeed
+    );
     return res.json({
       commander: cmd,
-      buildings: store.gameBuildings.filter((b) => b.user_id === user.username),
+      buildings,
       building_accrued: buildAccruedPayload(store, user.username),
+      pending_stockpile,
       units: store.gameUnits.filter((u) => u.user_id === user.username),
       inventory: store.gameInventory.filter((i) => i.user_id === user.username),
       missions: store.gameMissions.filter((m) => m.user_id === user.username),
@@ -1197,6 +1208,8 @@ router.post('/sell', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     const bonuses = loadBonusesDemo(store, user.username);
+    const buildings = store.gameBuildings.filter((b) => b.user_id === user.username);
+    const marketBuildingBonus = getMarketSellBonus(buildings);
     const stockpile = parseStockpile(cmd.stockpile_json);
     const hourSeed = Math.floor(Date.now() / 3600000);
     const cropPrices = getCropPrices(hourSeed);
@@ -1207,12 +1220,12 @@ router.post('/sell', async (req: Request, res: Response) => {
       const avail = stockpile.crops[resource_type] || 0;
       if (avail < amount) return res.status(400).json({ error: 'Not enough crops' });
       stockpile.crops[resource_type] = avail - amount;
-      goldEarned = Math.floor(cropPrices[resource_type] * amount * bonuses.marketSell);
+      goldEarned = Math.floor(cropPrices[resource_type] * amount * bonuses.marketSell * marketBuildingBonus);
     } else if (orePrices[resource_type] !== undefined) {
       const avail = stockpile.ores[resource_type] || 0;
       if (avail < amount) return res.status(400).json({ error: 'Not enough ores' });
       stockpile.ores[resource_type] = avail - amount;
-      goldEarned = Math.floor(orePrices[resource_type] * amount * bonuses.marketSell);
+      goldEarned = Math.floor(orePrices[resource_type] * amount * bonuses.marketSell * marketBuildingBonus);
     } else {
       return res.status(400).json({ error: 'Unknown resource type' });
     }
