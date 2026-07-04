@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase, getUrgencyLevel } from '../lib/supabase.js';
 import { getDemoStore, uuid } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
+import { awardXpDemo } from './progress.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -92,6 +93,7 @@ router.post('/litter-boxes/:id/clean', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cleaning = { id: uuid(), litter_box_id: boxId, cleaned_by: user.username, cleaned_at: new Date().toISOString() };
     store.litterCleanings.push(cleaning);
+    awardXpDemo(store, user.username, 'cat_care');
     return res.json(cleaning);
   }
 
@@ -145,6 +147,7 @@ router.post('/feeding', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const log = { id: uuid(), cat_names, fed_by: user.username, fed_at: new Date().toISOString(), notes };
     store.feedingLogs.push(log);
+    awardXpDemo(store, user.username, 'cat_care');
     return res.json(log);
   }
 

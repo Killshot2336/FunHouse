@@ -1,6 +1,7 @@
 import { useAuthStore } from '../stores';
 import { themeCopy } from '../themes/copy';
 import { CommanderVillage } from './games/commander-village/CommanderVillage';
+import { XpBar } from './games/commander-village/CommanderProgress';
 
 export function MiniGamesPage() {
   const { user } = useAuthStore();
@@ -9,6 +10,7 @@ export function MiniGamesPage() {
   return (
     <div className="space-y-4">
       <h2 className="font-bold text-lg tracking-wider">{copy.bored.title}</h2>
+      <XpBar />
       <CommanderVillage />
     </div>
   );

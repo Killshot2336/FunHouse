@@ -8,6 +8,7 @@ import financeRoutes from './routes/finance.js';
 import socialRoutes from './routes/social.js';
 import gameRoutes from './routes/game.js';
 import rivalRoutes from './routes/rival.js';
+import progressRoutes from './routes/progress.js';
 import { isDemoMode } from './lib/supabase.js';
 
 dotenv.config();
@@ -31,6 +32,7 @@ app.use('/api/finance', financeRoutes);
 app.use('/api/social', socialRoutes);
 app.use('/api/game', gameRoutes);
 app.use('/api/rival', rivalRoutes);
+app.use('/api/progress', progressRoutes);
 
 if (process.env.VERCEL !== '1') {
   app.listen(PORT, () => {

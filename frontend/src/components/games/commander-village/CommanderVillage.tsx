@@ -9,6 +9,11 @@ import { MissionBoard } from './MissionBoard';
 import { TradeHub } from './TradeHub';
 import { Leaderboard } from './Leaderboard';
 import { InventoryGrid } from './InventoryGrid';
+import { PackShop } from './PackShop';
+import { WorldMap } from './WorldMap';
+import { DuelArena } from './DuelArena';
+import { CommanderProgress } from './CommanderProgress';
+import type { Rarity } from './gameConfig';
 
 export interface GameState {
   commander: {
@@ -35,8 +40,8 @@ export interface GameState {
     ratePerHour: number;
   }>;
   units: Array<{
-    id: string; unit_key: string; slot_index: number;
-    stats: { atk: number; def: number; spd: number; luck: number };
+    id: string; unit_key: string; slot_index: number; rarity?: Rarity;
+    stats: Record<string, unknown>;
     cosmetics: Record<string, string>;
     equipment: Record<string, string | null>;
   }>;
@@ -46,15 +51,17 @@ export interface GameState {
   }>;
   missions: Array<{ mission_key: string; status: string; progress: number }>;
   patrols: Array<{ id: string; completes_at: string; result_json: unknown }>;
+  pity?: { rolls_since_rare: number; rolls_since_legendary: number };
   story: { title: string; text: string };
   config: {
     buildings: Record<string, unknown>;
     units: Array<{ key: string; name: string; icon: string; baseCost: number }>;
     missions: Array<{ key: string; name: string; type: string; target: number; reward: Record<string, number> }>;
+    packs?: Record<string, unknown>;
   };
 }
 
-type Tab = 'village' | 'army' | 'patrol' | 'missions' | 'inventory' | 'trade' | 'leaderboard';
+type Tab = 'village' | 'army' | 'packs' | 'world' | 'duels' | 'commander' | 'patrol' | 'missions' | 'inventory' | 'trade' | 'leaderboard';
 
 export function CommanderVillage() {
   const { user, token } = useAuthStore();
@@ -98,6 +105,10 @@ export function CommanderVillage() {
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: 'village', label: 'Village', icon: '🏘️' },
     { key: 'army', label: 'Army', icon: '⚔️' },
+    { key: 'packs', label: 'Packs', icon: '📦' },
+    { key: 'world', label: 'World', icon: '🗺️' },
+    { key: 'duels', label: 'Duels', icon: '⚡' },
+    { key: 'commander', label: 'Commander', icon: '⭐' },
     { key: 'patrol', label: 'Patrol', icon: '🎯' },
     { key: 'missions', label: 'Missions', icon: '📋' },
     { key: 'inventory', label: 'Loot', icon: '🎒' },
@@ -134,6 +145,10 @@ export function CommanderVillage() {
 
       {tab === 'village' && <VillageMap state={state} onUpdate={refresh} />}
       {tab === 'army' && <ArmyRoster state={state} onUpdate={refresh} />}
+      {tab === 'packs' && <PackShop state={state} onUpdate={refresh} />}
+      {tab === 'world' && <WorldMap state={state} onUpdate={refresh} />}
+      {tab === 'duels' && <DuelArena onUpdate={refresh} />}
+      {tab === 'commander' && <CommanderProgress />}
       {tab === 'patrol' && <PatrolRaid state={state} onUpdate={refresh} />}
       {tab === 'missions' && <MissionBoard state={state} />}
       {tab === 'inventory' && <InventoryGrid state={state} onUpdate={refresh} />}

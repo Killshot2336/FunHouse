@@ -107,10 +107,90 @@ export function statUpgradeCost(level: number): number {
   return Math.floor(10 * Math.pow(1.12, level));
 }
 
-export function calcPowerRating(units: Array<{ stats: Record<string, number> }>, villageLevel: number): number {
+export function calcPowerRating(units: Array<{ stats: Record<string, unknown> }>, villageLevel: number): number {
   const unitPower = units.reduce((sum, u) => {
-    const s = u.stats;
-    return sum + (s.atk || 0) + (s.def || 0) + (s.spd || 0) + (s.luck || 0);
+    const s = normalizeCombatStats(u.stats);
+    return sum + s.damage + s.shield + Math.floor(s.health / 10);
   }, 0);
   return Math.floor(unitPower + villageLevel * 10);
+}
+
+export const RARITY_STAT_MULT: Record<Rarity, number> = {
+  common: 1,
+  uncommon: 1.2,
+  rare: 1.5,
+  epic: 2,
+  legendary: 2.5,
+  mythic: 3,
+};
+
+export const PACK_TYPES = {
+  standard: { name: 'Standard Pack', icon: '📦', cost: { gold: 100 } },
+  faction: { name: 'Faction Pack', icon: '🏛️', cost: { faction_currency: 50 } },
+  premium: { name: 'Premium Pack', icon: '💎', cost: { materials: 75 } },
+} as const;
+
+export type PackType = keyof typeof PACK_TYPES;
+
+export const SKILL_BRANCHES = ['health', 'damage', 'shield'] as const;
+export type SkillBranch = typeof SKILL_BRANCHES[number];
+
+export const SKILL_NODE_BONUS: Record<SkillBranch, number> = {
+  health: 8,
+  damage: 5,
+  shield: 4,
+};
+
+export function skillNodeCost(branch: SkillBranch, node: number): { gold: number; materials: number } {
+  const base = branch === 'health' ? 15 : branch === 'damage' ? 20 : 18;
+  return { gold: Math.floor(base * Math.pow(1.25, node - 1)), materials: Math.floor(8 * node) };
+}
+
+export function normalizeCombatStats(stats: Record<string, unknown>): { health: number; damage: number; shield: number; skill_nodes: string[] } {
+  if (stats.health !== undefined) {
+    return {
+      health: Number(stats.health),
+      damage: Number(stats.damage ?? stats.atk ?? 5),
+      shield: Number(stats.shield ?? Math.floor(Number(stats.def ?? 3) / 2) + 2),
+      skill_nodes: Array.isArray(stats.skill_nodes) ? stats.skill_nodes as string[] : [],
+    };
+  }
+  const atk = Number(stats.atk ?? 5);
+  const def = Number(stats.def ?? 3);
+  return {
+    health: def * 10,
+    damage: atk,
+    shield: Math.floor(def / 2) + 2,
+    skill_nodes: [],
+  };
+}
+
+export function defaultCombatStats(rarity: Rarity = 'common'): { health: number; damage: number; shield: number; skill_nodes: string[] } {
+  const mult = RARITY_STAT_MULT[rarity];
+  return {
+    health: Math.floor(50 * mult),
+    damage: Math.floor(10 * mult),
+    shield: Math.floor(8 * mult),
+    skill_nodes: [],
+  };
+}
+
+export const COMMANDER_SKILLS = [
+  { key: 'farm_boost', name: '+5% Farm Yield', cost: 1, desc: 'Farms produce more food' },
+  { key: 'mine_boost', name: '+5% Mine Yield', cost: 1, desc: 'Mines produce more materials' },
+  { key: 'duel_luck', name: '+10% Duel Luck', cost: 1, desc: 'Better odds in duels' },
+  { key: 'pack_pity', name: '+1 Pack Pity', cost: 2, desc: 'Faster rare pulls' },
+  { key: 'grid_discount', name: 'Grid Expand -10%', cost: 2, desc: 'Cheaper territory expansion' },
+] as const;
+
+export const ZONE_TYPES: Record<string, { name: string; icon: string; yield: Record<string, number> }> = {
+  farm: { name: 'Farmland', icon: '🌾', yield: { food: 15 } },
+  mine: { name: 'Ore Vein', icon: '⛏️', yield: { materials: 12 } },
+  market: { name: 'Trade Post', icon: '🏪', yield: { gold: 20 } },
+  ruins: { name: 'Ancient Ruins', icon: '🏚️', yield: { faction_currency: 8 } },
+  fortress: { name: 'Fortress', icon: '🏰', yield: { gold: 10, materials: 10 } },
+};
+
+export function expandGridCost(gridSize: number): number {
+  return Math.floor(500 * Math.pow(1.5, gridSize - 8));
 }

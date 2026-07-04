@@ -3,6 +3,7 @@ import { isDemoMode, supabase, getWeekStart } from '../lib/supabase.js';
 import { getDemoStore, uuid } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 import { dealHouseholdDamage } from '../lib/rivalAI.js';
+import { awardXpDemo } from './progress.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -133,6 +134,8 @@ router.post('/complete/:id', async (req: Request, res: Response) => {
       store.taskStats.push(stat);
     }
     stat.tasks_completed += 1;
+
+    awardXpDemo(store, user.username, 'chore');
 
     const topStat = store.taskStats.filter((s) => s.week_start === weekStart).sort((a, b) => b.tasks_completed - a.tasks_completed)[0];
     if (topStat && boss) {

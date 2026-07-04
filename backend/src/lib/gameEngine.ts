@@ -3,7 +3,12 @@ import {
   RARITY_WEIGHTS,
   buildingRate,
   calcPowerRating,
+  normalizeCombatStats,
+  defaultCombatStats,
+  RARITY_STAT_MULT,
+  UNITS_BY_PATRON,
   type Rarity,
+  type Patron,
 } from './gameConfig.js';
 
 export interface CommanderState {
@@ -172,8 +177,31 @@ export function calcOfflineResources(
   };
 }
 
-export function defaultUnitStats(): { atk: number; def: number; spd: number; luck: number } {
-  return { atk: 5, def: 3, spd: 4, luck: 2 };
+export function defaultUnitStats(): { atk: number; def: number; spd: number; luck: number; health: number; damage: number; shield: number; skill_nodes: string[] } {
+  const combat = defaultCombatStats('common');
+  return { atk: combat.damage, def: Math.floor(combat.shield * 2), spd: 4, luck: 2, ...combat };
 }
 
-export { calcPowerRating };
+export function rollPackUnit(patron: Patron, pity: PityState): {
+  unitKey: string;
+  name: string;
+  icon: string;
+  rarity: Rarity;
+  stats: ReturnType<typeof defaultUnitStats>;
+  newPity: PityState;
+} {
+  const { rarity, newPity } = rollRarity(pity);
+  const pool = UNITS_BY_PATRON[patron];
+  const unitDef = pool[Math.floor(Math.random() * pool.length)];
+  const combat = defaultCombatStats(rarity);
+  return {
+    unitKey: unitDef.key,
+    name: unitDef.name,
+    icon: unitDef.icon,
+    rarity,
+    stats: { atk: combat.damage, def: Math.floor(combat.shield * 2), spd: 4 + Math.floor(RARITY_STAT_MULT[rarity]), luck: 2 + Math.floor(RARITY_STAT_MULT[rarity] * 2), ...combat },
+    newPity,
+  };
+}
+
+export { calcPowerRating, normalizeCombatStats };

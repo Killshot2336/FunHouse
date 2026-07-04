@@ -35,8 +35,8 @@ interface DemoStore {
   }>;
   gameBuildings: Array<{ id: string; user_id: string; building_key: string; grid_x: number; grid_y: number; level: number }>;
   gameUnits: Array<{
-    id: string; user_id: string; unit_key: string; slot_index: number;
-    stats: { atk: number; def: number; spd: number; luck: number };
+    id: string; user_id: string; unit_key: string; slot_index: number; rarity?: string;
+    stats: Record<string, unknown>;
     cosmetics: { armor: string; aura: string; weapon: string; banner: string };
     equipment: Record<string, string | null>;
   }>;
@@ -52,6 +52,10 @@ interface DemoStore {
     status: string; created_at: string;
   }>;
   gamePatrols: Array<{ id: string; user_id: string; started_at: string; completes_at: string; result_json: Record<string, unknown> | null }>;
+  profileProgress: Array<{ user_id: string; xp: number; level: number; sp_unspent: number; sp_spent_json: string[] }>;
+  gameZones: Array<{ id: string; zone_x: number; zone_y: number; zone_type: string; owner_user_id: string | null; yield_json: Record<string, number>; last_claim_at: string }>;
+  gameZoneDeployments: Array<{ id: string; zone_id: string; user_id: string; unit_ids: string[]; deployed_power: number }>;
+  gameDuels: Array<{ id: string; challenger_id: string; defender_id: string; status: string; challenger_stake_json?: Record<string, number>; defender_stake_json?: Record<string, number>; winner_id?: string }>;
 }
 
 const MASTER_TASKS = [
@@ -68,6 +72,24 @@ const MASTER_TASKS = [
   { name: 'Pet Area', description: 'Clean pet feeding area', icon: '🐾' },
   { name: 'Fridge', description: 'Clean out expired fridge items', icon: '🧊' },
 ];
+
+function seedZones(): DemoStore['gameZones'] {
+  const zones: DemoStore['gameZones'] = [];
+  const types = ['farm', 'mine', 'market', 'ruins', 'fortress'];
+  const yields: Record<string, Record<string, number>> = {
+    farm: { food: 15 }, mine: { materials: 12 }, market: { gold: 20 }, ruins: { faction_currency: 8 }, fortress: { gold: 10, materials: 10 },
+  };
+  for (let x = 0; x < 12; x++) {
+    for (let y = 0; y < 12; y++) {
+      const t = types[(x + y) % 5];
+      zones.push({
+        id: uuid(), zone_x: x, zone_y: y, zone_type: t,
+        owner_user_id: null, yield_json: yields[t], last_claim_at: new Date().toISOString(),
+      });
+    }
+  }
+  return zones;
+}
 
 function createInitialStore(): DemoStore {
   const weekStart = getWeekStart();
@@ -117,6 +139,10 @@ function createInitialStore(): DemoStore {
     gamePity: [],
     gameTrades: [],
     gamePatrols: [],
+    profileProgress: [],
+    gameZones: seedZones(),
+    gameZoneDeployments: [],
+    gameDuels: [],
   };
 }
 

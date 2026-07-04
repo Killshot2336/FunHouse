@@ -11,19 +11,32 @@ import {
   buildingCost,
   statUpgradeCost,
   calcPowerRating,
+  PACK_TYPES,
+  SKILL_BRANCHES,
+  SKILL_NODE_BONUS,
+  skillNodeCost,
+  expandGridCost,
+  ZONE_TYPES,
   type Patron,
+  type PackType,
+  type SkillBranch,
 } from '../lib/gameConfig.js';
 import {
   calcOfflineResources,
   calcBuildingAccrued,
   rollLoot,
+  rollPackUnit,
   defaultUnitStats,
 } from '../lib/gameEngine.js';
+import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from '../lib/progressEngine.js';
+import { awardXpDemo } from './progress.js';
 import * as gameDb from '../lib/gameSupabase.js';
 import {
   type TradeResources,
+  type CommanderResources,
   hasEnoughResources,
   applyResourceDelta,
+  deductResources,
   tradeDescription,
 } from '../lib/tradeResources.js';
 
@@ -106,7 +119,7 @@ router.get('/state', async (req: Request, res: Response) => {
       pity: store.gamePity.find((p) => p.user_id === user.username) || { rolls_since_rare: 0, rolls_since_legendary: 0 },
       patrols: store.gamePatrols.filter((p) => p.user_id === user.username && !p.result_json),
       story: STORY_INTROS[cmd.patron as Patron],
-      config: { buildings: BUILDINGS, units: UNITS_BY_PATRON[cmd.patron as Patron], missions: MISSIONS },
+      config: { buildings: BUILDINGS, units: UNITS_BY_PATRON[cmd.patron as Patron], missions: MISSIONS, packs: PACK_TYPES },
     });
   }
 
@@ -226,14 +239,16 @@ router.post('/units/:id/upgrade', async (req: Request, res: Response) => {
     if (!unit) return res.status(404).json({ error: 'Unit not found' });
     if (!['atk', 'def', 'spd', 'luck'].includes(stat)) return res.status(400).json({ error: 'Invalid stat' });
 
-    const level = unit.stats[stat as keyof typeof unit.stats];
+    const stats = unit.stats as Record<string, number>;
+    const level = Number(stats[stat] ?? 0);
     const cost = statUpgradeCost(level);
     if (cmd.gold < cost || cmd.materials < Math.floor(cost / 2)) {
       return res.status(400).json({ error: 'Not enough resources' });
     }
     cmd.gold -= cost;
     cmd.materials -= Math.floor(cost / 2);
-    unit.stats[stat as keyof typeof unit.stats] += 1;
+    stats[stat] = level + 1;
+    unit.stats = stats;
     updateMissionProgress(store, user.username, 'upgrade', 1);
     refreshPower(store, user.username);
     return res.json({ unit, commander: cmd });
@@ -353,9 +368,11 @@ router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
 
     item.equipped_to_unit = unit_id;
     unit.equipment[slot] = item.id;
+    const ustats = unit.stats as Record<string, number>;
     for (const [k, v] of Object.entries(item.stats)) {
-      if (k in unit.stats) unit.stats[k as keyof typeof unit.stats] += v;
+      if (k in ustats) ustats[k] = Number(ustats[k] ?? 0) + v;
     }
+    unit.stats = ustats;
     refreshPower(store, user.username);
     return res.json({ item, unit });
   }
@@ -523,6 +540,108 @@ router.get('/leaderboard', async (_req: Request, res: Response) => {
   res.json(board);
 });
 
+router.post('/packs/open', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { pack_type } = req.body as { pack_type: PackType };
+  const pack = PACK_TYPES[pack_type];
+  if (!pack) return res.status(400).json({ error: 'Invalid pack type' });
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const cmd = getOrCreateCommander(store, user.username);
+    const resCmd: CommanderResources = { gold: cmd.gold, materials: cmd.materials, food: cmd.food, faction_currency: cmd.faction_currency };
+    const afterCost = deductResources(resCmd, pack.cost);
+    if (!afterCost) return res.status(400).json({ error: 'Not enough resources' });
+    cmd.gold = afterCost.gold;
+    cmd.materials = afterCost.materials;
+    cmd.food = afterCost.food;
+    cmd.faction_currency = afterCost.faction_currency;
+
+    let pity = store.gamePity.find((p) => p.user_id === user.username);
+    if (!pity) { pity = { user_id: user.username, rolls_since_rare: 0, rolls_since_legendary: 0 }; store.gamePity.push(pity); }
+
+    const rolled = rollPackUnit(cmd.patron as Patron, pity);
+    pity.rolls_since_rare = rolled.newPity.rolls_since_rare;
+    pity.rolls_since_legendary = rolled.newPity.rolls_since_legendary;
+
+    const units = store.gameUnits.filter((u) => u.user_id === user.username);
+    if (units.length >= 6) {
+      cmd.gold += 50;
+      return res.json({ full: true, refund: 50, roll: rolled, commander: cmd });
+    }
+
+    const unit = {
+      id: uuid(),
+      user_id: user.username,
+      unit_key: rolled.unitKey,
+      slot_index: units.length,
+      rarity: rolled.rarity,
+      stats: rolled.stats,
+      cosmetics: { armor: 'default', aura: 'none', weapon: 'basic', banner: 'standard' },
+      equipment: { weapon: null, armor: null, aura: null, relic: null },
+    };
+    store.gameUnits.push(unit);
+    refreshPower(store, user.username);
+    awardXpDemo(store, user.username, 'pack_open');
+    return res.json({ unit, roll: rolled, commander: cmd, pity });
+  }
+
+  try {
+    const result = await gameDb.openPack(supabase, user.username, pack_type);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
+router.post('/units/:id/skill', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const unitId = String(req.params.id);
+  const { branch, node } = req.body as { branch: SkillBranch; node: number };
+
+  if (!SKILL_BRANCHES.includes(branch) || node < 1 || node > 5) {
+    return res.status(400).json({ error: 'Invalid skill node' });
+  }
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const cmd = getOrCreateCommander(store, user.username);
+    const unit = store.gameUnits.find((u) => u.id === unitId && u.user_id === user.username);
+    if (!unit) return res.status(404).json({ error: 'Unit not found' });
+
+    const nodeKey = `${branch}_${node}`;
+    const stats = unit.stats as Record<string, unknown>;
+    const nodes = (stats.skill_nodes as string[]) || [];
+    if (nodes.includes(nodeKey)) return res.status(400).json({ error: 'Already unlocked' });
+    if (node > 1 && !nodes.includes(`${branch}_${node - 1}`)) {
+      return res.status(400).json({ error: 'Unlock previous node first' });
+    }
+
+    const cost = skillNodeCost(branch, node);
+    if (cmd.gold < cost.gold || cmd.materials < cost.materials) {
+      return res.status(400).json({ error: 'Not enough resources' });
+    }
+    cmd.gold -= cost.gold;
+    cmd.materials -= cost.materials;
+    nodes.push(nodeKey);
+    stats.skill_nodes = nodes;
+    if (branch === 'health') stats.health = Number(stats.health ?? 50) + SKILL_NODE_BONUS.health;
+    if (branch === 'damage') { stats.damage = Number(stats.damage ?? 10) + SKILL_NODE_BONUS.damage; stats.atk = stats.damage; }
+    if (branch === 'shield') stats.shield = Number(stats.shield ?? 8) + SKILL_NODE_BONUS.shield;
+    unit.stats = stats;
+
+    refreshPower(store, user.username);
+    return res.json({ unit, commander: cmd });
+  }
+
+  try {
+    const result = await gameDb.unlockSkill(supabase, user.username, unitId, branch, node);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
 function updateMissionProgress(
   store: ReturnType<typeof getDemoStore>,
   userId: string,
@@ -546,5 +665,191 @@ function updateMissionProgress(
     }
   }
 }
+
+router.post('/expand-grid', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const cmd = getOrCreateCommander(store, user.username);
+    if (cmd.grid_size >= 16) return res.status(400).json({ error: 'Max grid size reached' });
+    const cost = expandGridCost(cmd.grid_size);
+    if (cmd.gold < cost) return res.status(400).json({ error: 'Not enough gold' });
+    cmd.gold -= cost;
+    cmd.grid_size += 2;
+    awardXpDemo(store, user.username, 'build');
+    return res.json({ commander: cmd, cost });
+  }
+  try {
+    const result = await gameDb.expandGrid(supabase, user.username);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.get('/zones', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const zones = store.gameZones.map((z) => ({
+      ...z,
+      deployments: store.gameZoneDeployments.filter((d) => d.zone_id === z.id).map((d) => ({
+        user_id: d.user_id,
+        unit_count: d.unit_ids.length,
+      })),
+      hidden_power: true,
+    }));
+    return res.json({ zones, zone_types: ZONE_TYPES });
+  }
+  try {
+    const result = await gameDb.getZones(supabase, user.username);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/zones/:id/deploy', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const zoneId = String(req.params.id);
+  const { unit_ids } = req.body as { unit_ids: string[] };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const zone = store.gameZones.find((z) => z.id === zoneId);
+    if (!zone) return res.status(404).json({ error: 'Zone not found' });
+    const units = store.gameUnits.filter((u) => unit_ids.includes(u.id) && u.user_id === user.username);
+    if (units.length !== unit_ids.length) return res.status(400).json({ error: 'Invalid units' });
+    const power = units.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    store.gameZoneDeployments = store.gameZoneDeployments.filter((d) => !(d.zone_id === zoneId && d.user_id === user.username));
+    store.gameZoneDeployments.push({ id: uuid(), zone_id: zoneId, user_id: user.username, unit_ids, deployed_power: power });
+    return res.json({ deployed: true, power });
+  }
+  try {
+    const result = await gameDb.deployToZone(supabase, user.username, zoneId, unit_ids);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/zones/:id/attack', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const zoneId = String(req.params.id);
+  const { unit_ids } = req.body as { unit_ids: string[] };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const zone = store.gameZones.find((z) => z.id === zoneId);
+    if (!zone) return res.status(404).json({ error: 'Zone not found' });
+    const atkUnits = store.gameUnits.filter((u) => unit_ids.includes(u.id) && u.user_id === user.username);
+    const atkPower = atkUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    const defDeployments = store.gameZoneDeployments.filter((d) => d.zone_id === zoneId && d.user_id !== user.username);
+    const defPower = defDeployments.reduce((s, d) => s + d.deployed_power, 0);
+    const variance = 0.95 + Math.random() * 0.1;
+    const won = atkPower * variance > defPower;
+
+    if (won) {
+      zone.owner_user_id = user.username;
+      for (const d of defDeployments) {
+        store.gameUnits = store.gameUnits.filter((u) => !d.unit_ids.includes(u.id));
+        store.gameZoneDeployments = store.gameZoneDeployments.filter((x) => x.id !== d.id);
+      }
+      const cmd = getOrCreateCommander(store, user.username);
+      applyZoneYield(cmd, zone.yield_json);
+      store.gameZoneDeployments.push({ id: uuid(), zone_id: zoneId, user_id: user.username, unit_ids, deployed_power: atkPower });
+      awardXpDemo(store, user.username, 'zone_capture');
+      return res.json({ won: true, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), zone });
+    }
+
+    store.gameUnits = store.gameUnits.filter((u) => !unit_ids.includes(u.id));
+    return res.json({ won: false, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), troops_lost: unit_ids.length });
+  }
+  try {
+    const result = await gameDb.attackZone(supabase, user.username, zoneId, unit_ids);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.get('/duels', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const duels = store.gameDuels.filter((d) => (d.challenger_id === user.username || d.defender_id === user.username) && d.status === 'pending');
+    return res.json(duels);
+  }
+  try {
+    const result = await gameDb.getDuels(supabase, user.username);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/duels/challenge', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { opponent } = req.body;
+  if (!opponent || opponent === user.username) return res.status(400).json({ error: 'Invalid opponent' });
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const duel = { id: uuid(), challenger_id: user.username, defender_id: opponent, status: 'pending' };
+    store.gameDuels.push(duel);
+    return res.json(duel);
+  }
+  try {
+    const result = await gameDb.createDuel(supabase, user.username, opponent);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/duels/:id/accept', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const duelId = String(req.params.id);
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const duel = store.gameDuels.find((d) => d.id === duelId && d.defender_id === user.username && d.status === 'pending');
+    if (!duel) return res.status(404).json({ error: 'Duel not found' });
+
+    const challenger = getOrCreateCommander(store, duel.challenger_id);
+    const defender = getOrCreateCommander(store, duel.defender_id);
+    duel.challenger_stake_json = rollDuelStakes(challenger);
+    duel.defender_stake_json = rollDuelStakes(defender);
+
+    deductCommanderResources(challenger, duel.challenger_stake_json!);
+    deductCommanderResources(defender, duel.defender_stake_json!);
+
+    const chUnits = store.gameUnits.filter((u) => u.user_id === duel.challenger_id);
+    const defUnits = store.gameUnits.filter((u) => u.user_id === duel.defender_id);
+    const chPower = chUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    const defPower = defUnits.reduce((s, u) => s + unitCombatPower(u.stats as Record<string, unknown>), 0);
+    const variance = 0.95 + Math.random() * 0.1;
+    const challengerWins = chPower * variance > defPower;
+
+    const pot: Record<string, number> = { gold: 0, materials: 0, food: 0, faction_currency: 0 };
+    for (const k of Object.keys(pot)) {
+      pot[k] = (duel.challenger_stake_json![k] || 0) + (duel.defender_stake_json![k] || 0);
+    }
+    const winner = challengerWins ? challenger : defender;
+    duel.winner_id = challengerWins ? duel.challenger_id : duel.defender_id;
+    duel.status = 'completed';
+    addCommanderResources(winner, {
+      gold: Math.floor(pot.gold * 0.8),
+      materials: Math.floor(pot.materials * 0.8),
+      food: Math.floor(pot.food * 0.8),
+      faction_currency: Math.floor(pot.faction_currency * 0.8),
+    });
+    awardXpDemo(store, duel.winner_id, 'duel_win');
+    awardXpDemo(store, challengerWins ? duel.defender_id : duel.challenger_id, 'duel_lose');
+
+    return res.json({
+      duel,
+      challengerWins,
+      chPower: Math.floor(chPower),
+      defPower: Math.floor(defPower),
+      winner_id: duel.winner_id,
+      stakes_hidden: false,
+      challenger_stake: duel.challenger_stake_json,
+      defender_stake: duel.defender_stake_json,
+    });
+  }
+  try {
+    const result = await gameDb.acceptDuel(supabase, user.username, duelId);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
 
 export default router;

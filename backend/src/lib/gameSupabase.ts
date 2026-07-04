@@ -8,19 +8,30 @@ import {
   buildingCost,
   statUpgradeCost,
   calcPowerRating,
+  PACK_TYPES,
+  SKILL_NODE_BONUS,
+  skillNodeCost,
+  expandGridCost,
+  ZONE_TYPES,
   type Patron,
+  type PackType,
+  type SkillBranch,
 } from './gameConfig.js';
 import {
   calcOfflineResources,
   calcBuildingAccrued,
   rollLoot,
+  rollPackUnit,
   defaultUnitStats,
   type BuildingState,
 } from './gameEngine.js';
+import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from './progressEngine.js';
 import {
   type TradeResources,
+  type CommanderResources,
   hasEnoughResources,
   applyResourceDelta,
+  deductResources,
   tradeDescription,
 } from './tradeResources.js';
 
@@ -190,6 +201,7 @@ export async function getGameState(sb: SupabaseClient, userId: string) {
       buildings: BUILDINGS,
       units: UNITS_BY_PATRON[cmd.patron as Patron],
       missions: MISSIONS,
+      packs: PACK_TYPES,
     },
   };
 }
@@ -618,6 +630,79 @@ export async function acceptTrade(sb: SupabaseClient, userId: string, tradeId: s
   return { trade: { ...trade, status: 'accepted' }, success: true };
 }
 
+export async function openPack(sb: SupabaseClient, userId: string, packType: PackType) {
+  const pack = PACK_TYPES[packType];
+  const cmd = await getOrCreateCommander(sb, userId);
+
+  const resCmd: CommanderResources = { gold: cmd.gold, materials: cmd.materials, food: cmd.food, faction_currency: cmd.faction_currency };
+  const afterCost = deductResources(resCmd, pack.cost);
+  if (!afterCost) throw new Error('Not enough resources');
+  await sb.from('game_commanders').update(afterCost).eq('user_id', userId);
+
+  const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
+  const pity = pityRow || { rolls_since_rare: 0, rolls_since_legendary: 0 };
+  const rolled = rollPackUnit(cmd.patron as Patron, pity);
+  await sb.from('game_drop_pity').upsert({
+    user_id: userId,
+    rolls_since_rare: rolled.newPity.rolls_since_rare,
+    rolls_since_legendary: rolled.newPity.rolls_since_legendary,
+  });
+
+  const { data: units } = await sb.from('game_army_units').select('id').eq('user_id', userId);
+  const { data: commanderAfterCost } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+
+  if ((units?.length || 0) >= 6) {
+    const refund = 50;
+    await sb.from('game_commanders').update({ gold: (commanderAfterCost?.gold || 0) + refund }).eq('user_id', userId);
+    const { data: refreshed } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+    return { full: true, refund, roll: rolled, commander: refreshed, pity: rolled.newPity };
+  }
+
+  const slot = units?.length || 0;
+  const { data: unit } = await sb.from('game_army_units').insert({
+    user_id: userId,
+    unit_key: rolled.unitKey,
+    slot_index: slot,
+    stats_json: rolled.stats,
+    cosmetics_json: { armor: 'default', aura: 'none', weapon: 'basic', banner: 'standard' },
+    equipment_json: { weapon: null, armor: null, aura: null, relic: null },
+  }).select().single();
+
+  await refreshPower(sb, userId);
+  const { data: commander } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+  return { unit: mapUnit(unit!), roll: rolled, commander, pity: rolled.newPity };
+}
+
+export async function unlockSkill(sb: SupabaseClient, userId: string, unitId: string, branch: SkillBranch, node: number) {
+  const cmd = await getOrCreateCommander(sb, userId);
+  const { data: row } = await sb.from('game_army_units').select('*').eq('id', unitId).eq('user_id', userId).single();
+  if (!row) throw new Error('Unit not found');
+
+  const unit = mapUnit(row);
+  const stats = { ...unit.stats, skill_nodes: [...((unit.stats as { skill_nodes?: string[] }).skill_nodes || [])] } as Record<string, unknown>;
+  const nodes = (stats.skill_nodes as string[]) || [];
+  const nodeKey = `${branch}_${node}`;
+  if (nodes.includes(nodeKey)) throw new Error('Already unlocked');
+  if (node > 1 && !nodes.includes(`${branch}_${node - 1}`)) throw new Error('Unlock previous node first');
+
+  const cost = skillNodeCost(branch, node);
+  if (cmd.gold < cost.gold || cmd.materials < cost.materials) throw new Error('Not enough resources');
+
+  nodes.push(nodeKey);
+  stats.skill_nodes = nodes;
+  if (branch === 'health') stats.health = Number(stats.health ?? 50) + SKILL_NODE_BONUS.health;
+  if (branch === 'damage') { stats.damage = Number(stats.damage ?? 10) + SKILL_NODE_BONUS.damage; stats.atk = stats.damage; }
+  if (branch === 'shield') stats.shield = Number(stats.shield ?? 8) + SKILL_NODE_BONUS.shield;
+
+  await sb.from('game_commanders').update({ gold: cmd.gold - cost.gold, materials: cmd.materials - cost.materials }).eq('user_id', userId);
+  await sb.from('game_army_units').update({ stats_json: stats }).eq('id', unitId);
+  await refreshPower(sb, userId);
+
+  const { data: refreshedUnit } = await sb.from('game_army_units').select('*').eq('id', unitId).single();
+  const { data: commander } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+  return { unit: mapUnit(refreshedUnit!), commander };
+}
+
 export async function getLeaderboard(sb: SupabaseClient) {
   const { data } = await sb.from('game_commanders').select('user_id, power_rating, village_level, gold');
   const board = ['aden', 'edward', 'jamie'].map((uid) => {
@@ -631,4 +716,126 @@ export async function getLeaderboard(sb: SupabaseClient) {
   }).sort((a, b) => b.power_rating - a.power_rating);
 
   return board;
+}
+
+export async function expandGrid(sb: SupabaseClient, userId: string) {
+  const cmd = await getOrCreateCommander(sb, userId);
+  if (cmd.grid_size >= 16) throw new Error('Max grid size reached');
+  const cost = expandGridCost(cmd.grid_size);
+  if (cmd.gold < cost) throw new Error('Not enough gold');
+  await sb.from('game_commanders').update({ gold: cmd.gold - cost, grid_size: cmd.grid_size + 2 }).eq('user_id', userId);
+  const { data } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+  return { commander: data, cost };
+}
+
+export async function getZones(sb: SupabaseClient, userId: string) {
+  const { data: zones } = await sb.from('game_zones').select('*');
+  const { data: deployments } = await sb.from('game_zone_deployments').select('*');
+  return {
+    zones: (zones || []).map((z) => ({
+      ...z,
+      deployments: (deployments || []).filter((d) => d.zone_id === z.id).map((d) => ({
+        user_id: d.user_id,
+        unit_count: (d.unit_ids as string[]).length,
+      })),
+    })),
+    zone_types: ZONE_TYPES,
+  };
+}
+
+export async function deployToZone(sb: SupabaseClient, userId: string, zoneId: string, unitIds: string[]) {
+  const { data: units } = await sb.from('game_army_units').select('*').eq('user_id', userId).in('id', unitIds);
+  if (!units || units.length !== unitIds.length) throw new Error('Invalid units');
+  const power = units.reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  await sb.from('game_zone_deployments').delete().eq('zone_id', zoneId).eq('user_id', userId);
+  await sb.from('game_zone_deployments').insert({ zone_id: zoneId, user_id: userId, unit_ids: unitIds, deployed_power: power });
+  return { deployed: true, power };
+}
+
+export async function attackZone(sb: SupabaseClient, userId: string, zoneId: string, unitIds: string[]) {
+  const { data: zone } = await sb.from('game_zones').select('*').eq('id', zoneId).single();
+  if (!zone) throw new Error('Zone not found');
+  const { data: atkUnits } = await sb.from('game_army_units').select('*').eq('user_id', userId).in('id', unitIds);
+  const atkPower = (atkUnits || []).reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  const { data: defDeps } = await sb.from('game_zone_deployments').select('*').eq('zone_id', zoneId).neq('user_id', userId);
+  const defPower = (defDeps || []).reduce((s, d) => s + d.deployed_power, 0);
+  const variance = 0.95 + Math.random() * 0.1;
+  const won = atkPower * variance > defPower;
+  const cmd = await getOrCreateCommander(sb, userId);
+
+  if (won) {
+    for (const d of defDeps || []) {
+      for (const uid of d.unit_ids as string[]) {
+        await sb.from('game_army_units').delete().eq('id', uid);
+      }
+      await sb.from('game_zone_deployments').delete().eq('id', d.id);
+    }
+    const yieldJson = zone.yield_json as Record<string, number>;
+    const cmdRes = { gold: cmd.gold, materials: cmd.materials, food: cmd.food, faction_currency: cmd.faction_currency };
+    applyZoneYield(cmdRes, yieldJson);
+    await sb.from('game_commanders').update(cmdRes).eq('user_id', userId);
+    await sb.from('game_zones').update({ owner_user_id: userId }).eq('id', zoneId);
+    await sb.from('game_zone_deployments').upsert({ zone_id: zoneId, user_id: userId, unit_ids: unitIds, deployed_power: atkPower });
+    return { won: true, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), zone: { ...zone, owner_user_id: userId } };
+  }
+
+  for (const uid of unitIds) await sb.from('game_army_units').delete().eq('id', uid);
+  return { won: false, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), troops_lost: unitIds.length };
+}
+
+export async function getDuels(sb: SupabaseClient, userId: string) {
+  const { data } = await sb.from('game_duels').select('*').or(`challenger_id.eq.${userId},defender_id.eq.${userId}`).eq('status', 'pending');
+  return data || [];
+}
+
+export async function createDuel(sb: SupabaseClient, challengerId: string, defenderId: string) {
+  const { data } = await sb.from('game_duels').insert({ challenger_id: challengerId, defender_id: defenderId }).select().single();
+  return data;
+}
+
+export async function acceptDuel(sb: SupabaseClient, userId: string, duelId: string) {
+  const { data: duel } = await sb.from('game_duels').select('*').eq('id', duelId).eq('defender_id', userId).eq('status', 'pending').single();
+  if (!duel) throw new Error('Duel not found');
+  const challenger = await getOrCreateCommander(sb, duel.challenger_id);
+  const defender = await getOrCreateCommander(sb, duel.defender_id);
+  const chStake = rollDuelStakes(challenger);
+  const defStake = rollDuelStakes(defender);
+
+  const chAfter = {
+    gold: challenger.gold - (chStake.gold || 0),
+    materials: challenger.materials - (chStake.materials || 0),
+    food: challenger.food - (chStake.food || 0),
+    faction_currency: challenger.faction_currency - (chStake.faction_currency || 0),
+  };
+  const defAfter = {
+    gold: defender.gold - (defStake.gold || 0),
+    materials: defender.materials - (defStake.materials || 0),
+    food: defender.food - (defStake.food || 0),
+    faction_currency: defender.faction_currency - (defStake.faction_currency || 0),
+  };
+  await sb.from('game_commanders').update(chAfter).eq('user_id', duel.challenger_id);
+  await sb.from('game_commanders').update(defAfter).eq('user_id', duel.defender_id);
+
+  const { data: chUnits } = await sb.from('game_army_units').select('*').eq('user_id', duel.challenger_id);
+  const { data: defUnits } = await sb.from('game_army_units').select('*').eq('user_id', duel.defender_id);
+  const chPower = (chUnits || []).reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  const defPower = (defUnits || []).reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  const challengerWins = chPower * (0.95 + Math.random() * 0.1) > defPower;
+  const winnerId = challengerWins ? duel.challenger_id : duel.defender_id;
+
+  const pot = { gold: 0, materials: 0, food: 0, faction_currency: 0 };
+  for (const k of Object.keys(pot) as (keyof typeof pot)[]) {
+    pot[k] = (chStake[k] || 0) + (defStake[k] || 0);
+  }
+  const winnerCmd = challengerWins ? chAfter : defAfter;
+  const winUpdate = {
+    gold: winnerCmd.gold + Math.floor(pot.gold * 0.8),
+    materials: winnerCmd.materials + Math.floor(pot.materials * 0.8),
+    food: winnerCmd.food + Math.floor(pot.food * 0.8),
+    faction_currency: winnerCmd.faction_currency + Math.floor(pot.faction_currency * 0.8),
+  };
+  await sb.from('game_commanders').update(winUpdate).eq('user_id', winnerId);
+
+  await sb.from('game_duels').update({ status: 'completed', winner_id: winnerId, challenger_stake_json: chStake, defender_stake_json: defStake }).eq('id', duelId);
+  return { duel: { ...duel, status: 'completed', winner_id: winnerId }, challengerWins, chPower: Math.floor(chPower), defPower: Math.floor(defPower), challenger_stake: chStake, defender_stake: defStake, winner_id: winnerId };
 }

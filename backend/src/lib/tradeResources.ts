@@ -44,6 +44,19 @@ export function applyResourceDelta(cmd: CommanderResources, delta: TradeResource
   return next;
 }
 
+export function deductResources(cmd: CommanderResources, cost: Partial<Record<ResourceKey, number>>): CommanderResources | null {
+  for (const key of Object.keys(RESOURCE_META) as ResourceKey[]) {
+    const need = cost[key] || 0;
+    if (need > 0 && getCommanderResource(cmd, key) < need) return null;
+  }
+  const next = { ...cmd };
+  for (const key of Object.keys(RESOURCE_META) as ResourceKey[]) {
+    const amount = cost[key] || 0;
+    if (amount > 0) next[key] -= amount;
+  }
+  return next;
+}
+
 export function tradeDescription(bundle: TradeResources): string {
   const parts = (Object.keys(RESOURCE_META) as ResourceKey[])
     .filter((k) => (bundle[k] || 0) > 0)
