@@ -5,6 +5,11 @@ import {
   STORY_INTROS,
   BUILDINGS,
   UNITS_BY_PATRON,
+  LOOT_TABLE,
+  CROP_TYPES,
+  ORE_TYPES,
+  BUILDING_UPGRADE_TREES,
+  GAME_GUIDE,
   buildingCost,
   statUpgradeCost,
   calcPowerRating,
@@ -13,6 +18,9 @@ import {
   skillNodeCost,
   expandGridCost,
   ZONE_TYPES,
+  isValidBuildingKey,
+  getUnlockedCrops,
+  getPickaxeTier,
   type Patron,
   type PackType,
   type SkillBranch,
@@ -20,11 +28,28 @@ import {
 import {
   calcOfflineResources,
   calcBuildingAccrued,
+  calcStockpileAccrual,
+  mergeStockpile,
   rollLoot,
   rollPackUnit,
   defaultUnitStats,
   type BuildingState,
 } from './gameEngine.js';
+import {
+  itemSellPrice,
+  getCropPrices,
+  getOrePrices,
+  getHotCrop,
+  marketResetsAt,
+  dungeonResetsAt,
+  getDungeonSeed,
+  generateDungeonRooms,
+  rollOres,
+  defaultBuildingMeta,
+  upgradeSlotCost,
+  parseStockpile,
+  type Stockpile,
+} from './economyEngine.js';
 import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from './progressEngine.js';
 import {
   type TradeResources,
@@ -48,6 +73,8 @@ export interface Commander {
   story_seen: boolean;
   grid_size: number;
   last_seen_at: string;
+  stockpile_json?: Stockpile;
+  pickaxe_tier?: number;
 }
 
 export interface Building {
@@ -57,6 +84,7 @@ export interface Building {
   grid_x: number;
   grid_y: number;
   level: number;
+  building_meta_json?: Record<string, unknown>;
 }
 
 export interface Unit {
@@ -124,6 +152,8 @@ export async function getOrCreateCommander(sb: SupabaseClient, userId: string): 
     story_seen: false,
     grid_size: 8,
     last_seen_at: new Date().toISOString(),
+    stockpile_json: parseStockpile(null),
+    pickaxe_tier: 1,
   };
 
   await sb.from('game_commanders').insert(cmd);
@@ -154,21 +184,34 @@ export async function applyOffline(sb: SupabaseClient, userId: string): Promise<
   const cmd = await getOrCreateCommander(sb, userId);
   const { data: buildings } = await sb.from('game_village_buildings').select('*').eq('user_id', userId);
 
-  const offline = calcOfflineResources(
-    (buildings || []) as BuildingState[],
-    cmd.last_seen_at
-  );
+  const buildingStates = (buildings || []) as BuildingState[];
+  const offline = calcOfflineResources(buildingStates, cmd.last_seen_at);
+  const stockpileAccrual = calcStockpileAccrual(buildingStates, cmd.last_seen_at);
+  const mergedStockpile = mergeStockpile(cmd.stockpile_json, stockpileAccrual);
 
   const updated = {
     gold: cmd.gold + offline.gold,
     materials: cmd.materials + offline.materials,
     food: cmd.food + offline.food,
     faction_currency: cmd.faction_currency + offline.faction,
+    stockpile_json: mergedStockpile,
     last_seen_at: new Date().toISOString(),
   };
 
   await sb.from('game_commanders').update(updated).eq('user_id', userId);
   return { ...cmd, ...updated };
+}
+
+function buildMarketConfig() {
+  const hourSeed = Math.floor(Date.now() / 3600000);
+  return {
+    crop_prices: getCropPrices(hourSeed),
+    ore_prices: getOrePrices(hourSeed),
+    hot_crop: getHotCrop(hourSeed),
+    market_resets_at: marketResetsAt(),
+    dungeon_seed: getDungeonSeed(),
+    dungeon_resets_at: dungeonResetsAt(),
+  };
 }
 
 export async function getGameState(sb: SupabaseClient, userId: string) {
@@ -188,7 +231,7 @@ export async function getGameState(sb: SupabaseClient, userId: string) {
   ]);
 
   return {
-    commander: cmd,
+    commander: { ...cmd, stockpile_json: parseStockpile(cmd.stockpile_json) },
     buildings: buildingsRes.data || [],
     building_accrued: calcBuildingAccrued((buildingsRes.data || []) as BuildingState[], cmd.last_seen_at),
     units: (unitsRes.data || []).map(mapUnit),
@@ -197,11 +240,17 @@ export async function getGameState(sb: SupabaseClient, userId: string) {
     pity: pityRes.data || { rolls_since_rare: 0, rolls_since_legendary: 0 },
     patrols: patrolsRes.data || [],
     story: STORY_INTROS[cmd.patron as Patron],
+    market: buildMarketConfig(),
     config: {
       buildings: BUILDINGS,
       units: UNITS_BY_PATRON[cmd.patron as Patron],
       missions: MISSIONS,
       packs: PACK_TYPES,
+      items: LOOT_TABLE,
+      crops: CROP_TYPES,
+      ores: ORE_TYPES,
+      upgrade_trees: BUILDING_UPGRADE_TREES,
+      guide: GAME_GUIDE,
     },
   };
 }
@@ -289,12 +338,20 @@ export async function placeBuilding(
   const cost = buildingCost(building_key, 0);
   if (cmd.gold < cost) throw new Error('Not enough gold');
   if (grid_x >= cmd.grid_size || grid_y >= cmd.grid_size) throw new Error('Out of bounds');
+  if (!isValidBuildingKey(building_key)) throw new Error('Invalid building type');
 
   await sb.from('game_commanders').update({ gold: cmd.gold - cost }).eq('user_id', userId);
 
   const { data: building } = await sb
     .from('game_village_buildings')
-    .insert({ user_id: userId, building_key, grid_x, grid_y, level: 1 })
+    .insert({
+      user_id: userId,
+      building_key,
+      grid_x,
+      grid_y,
+      level: 1,
+      building_meta_json: defaultBuildingMeta(building_key),
+    })
     .select()
     .single();
 
@@ -529,19 +586,17 @@ export async function sellItem(sb: SupabaseClient, userId: string, itemId: strin
   if (!itemRow) throw new Error('Not found');
   if (itemRow.equipped_to_unit) throw new Error('Unequip first');
 
-  const sellValues: Record<string, number> = {
-    common: 5, uncommon: 25, rare: 75, epic: 200, legendary: 500, mythic: 2000,
-  };
+  const price = itemSellPrice(itemRow.item_id, itemRow.rarity);
 
   const cmd = await getOrCreateCommander(sb, userId);
   await sb.from('game_commanders').update({
-    gold: cmd.gold + (sellValues[itemRow.rarity] || 5),
+    gold: cmd.gold + price,
   }).eq('user_id', userId);
 
   await sb.from('game_inventory').delete().eq('id', itemId);
 
   const { data: updatedCmd } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
-  return { commander: updatedCmd };
+  return { commander: updatedCmd, sell_price: price };
 }
 
 export async function getTrades(sb: SupabaseClient, userId: string) {
@@ -838,4 +893,214 @@ export async function acceptDuel(sb: SupabaseClient, userId: string, duelId: str
 
   await sb.from('game_duels').update({ status: 'completed', winner_id: winnerId, challenger_stake_json: chStake, defender_stake_json: defStake }).eq('id', duelId);
   return { duel: { ...duel, status: 'completed', winner_id: winnerId }, challengerWins, chPower: Math.floor(chPower), defPower: Math.floor(defPower), challenger_stake: chStake, defender_stake: defStake, winner_id: winnerId };
+}
+
+export async function sellResource(
+  sb: SupabaseClient,
+  userId: string,
+  resourceType: string,
+  amount: number
+) {
+  if (amount <= 0) throw new Error('Invalid amount');
+  const cmd = await getOrCreateCommander(sb, userId);
+  const stockpile = parseStockpile(cmd.stockpile_json);
+  const hourSeed = Math.floor(Date.now() / 3600000);
+  const cropPrices = getCropPrices(hourSeed);
+  const orePrices = getOrePrices(hourSeed);
+
+  let goldEarned = 0;
+  if (cropPrices[resourceType] !== undefined) {
+    const available = stockpile.crops[resourceType] || 0;
+    if (available < amount) throw new Error('Not enough crops');
+    stockpile.crops[resourceType] = available - amount;
+    goldEarned = cropPrices[resourceType] * amount;
+  } else if (orePrices[resourceType] !== undefined) {
+    const available = stockpile.ores[resourceType] || 0;
+    if (available < amount) throw new Error('Not enough ores');
+    stockpile.ores[resourceType] = available - amount;
+    goldEarned = orePrices[resourceType] * amount;
+  } else {
+    throw new Error('Unknown resource type');
+  }
+
+  await sb.from('game_commanders').update({
+    gold: cmd.gold + goldEarned,
+    stockpile_json: stockpile,
+  }).eq('user_id', userId);
+
+  const { data: updatedCmd } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+  return { commander: updatedCmd, gold_earned: goldEarned };
+}
+
+export async function upgradeBuildingSlot(
+  sb: SupabaseClient,
+  userId: string,
+  buildingId: string,
+  slot: number
+) {
+  if (slot < 1 || slot > 5) throw new Error('Invalid slot');
+  const { data: building } = await sb.from('game_village_buildings').select('*').eq('id', buildingId).eq('user_id', userId).single();
+  if (!building) throw new Error('Building not found');
+
+  const meta = (building.building_meta_json || defaultBuildingMeta(building.building_key)) as {
+    upgrades: Record<string, number>;
+    crop?: string;
+  };
+  const slotKey = String(slot);
+  const currentLevel = meta.upgrades[slotKey] || 0;
+  const cost = upgradeSlotCost(building.building_key, slot, currentLevel);
+
+  const cmd = await getOrCreateCommander(sb, userId);
+  if (cmd.gold < cost.gold || cmd.materials < cost.materials) {
+    throw new Error('Not enough resources');
+  }
+
+  meta.upgrades[slotKey] = currentLevel + 1;
+
+  let pickaxeUpdate: number | undefined;
+  if (building.building_key === 'smithy' && slot === 1) {
+    pickaxeUpdate = getPickaxeTier(meta.upgrades, cmd.pickaxe_tier || 1);
+  }
+
+  const cmdUpdate: Record<string, unknown> = {
+    gold: cmd.gold - cost.gold,
+    materials: cmd.materials - cost.materials,
+  };
+  if (pickaxeUpdate !== undefined) cmdUpdate.pickaxe_tier = pickaxeUpdate;
+
+  await sb.from('game_commanders').update(cmdUpdate).eq('user_id', userId);
+  await sb.from('game_village_buildings').update({ building_meta_json: meta }).eq('id', buildingId);
+
+  const { data: updatedBuilding } = await sb.from('game_village_buildings').select('*').eq('id', buildingId).single();
+  const { data: updatedCmd } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+  return { building: updatedBuilding, commander: updatedCmd };
+}
+
+export async function setBuildingCrop(
+  sb: SupabaseClient,
+  userId: string,
+  buildingId: string,
+  crop: string
+) {
+  const { data: building } = await sb.from('game_village_buildings').select('*').eq('id', buildingId).eq('user_id', userId).single();
+  if (!building) throw new Error('Building not found');
+  if (!['farm', 'greenhouse'].includes(building.building_key)) throw new Error('Not a crop building');
+
+  const meta = (building.building_meta_json || defaultBuildingMeta(building.building_key)) as {
+    upgrades: Record<string, number>;
+    crop?: string;
+  };
+  const unlocked = getUnlockedCrops(meta.upgrades || {});
+  if (!unlocked.includes(crop)) throw new Error('Crop not unlocked');
+
+  meta.crop = crop;
+  await sb.from('game_village_buildings').update({ building_meta_json: meta }).eq('id', buildingId);
+  const { data: updated } = await sb.from('game_village_buildings').select('*').eq('id', buildingId).single();
+  return { building: updated };
+}
+
+export async function mineCollect(sb: SupabaseClient, userId: string, buildingId: string) {
+  const { data: building } = await sb.from('game_village_buildings').select('*').eq('id', buildingId).eq('user_id', userId).single();
+  if (!building) throw new Error('Building not found');
+  if (building.building_key !== 'mine') throw new Error('Not a mine');
+
+  const cmd = await getOrCreateCommander(sb, userId);
+  const meta = (building.building_meta_json || defaultBuildingMeta('mine')) as { upgrades: Record<string, number> };
+  const { data: smithy } = await sb.from('game_village_buildings').select('building_meta_json').eq('user_id', userId).eq('building_key', 'smithy').limit(1).single();
+  const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || {};
+  const pickaxeTier = getPickaxeTier(smithyUpgrades, cmd.pickaxe_tier || 1);
+  const deepShaft = meta.upgrades?.['1'] || 0;
+  const effectiveLevel = building.level + deepShaft;
+
+  const ores = rollOres(pickaxeTier, effectiveLevel, Date.now());
+  const stockpile = parseStockpile(cmd.stockpile_json);
+  for (const [k, v] of Object.entries(ores)) {
+    stockpile.ores[k] = (stockpile.ores[k] || 0) + v;
+  }
+
+  await sb.from('game_commanders').update({ stockpile_json: stockpile, pickaxe_tier: pickaxeTier }).eq('user_id', userId);
+  const { data: updatedCmd } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+  return { ores, commander: updatedCmd, pickaxe_tier: pickaxeTier };
+}
+
+export async function getDungeon(sb: SupabaseClient, userId: string) {
+  const cmd = await getOrCreateCommander(sb, userId);
+  const seed = getDungeonSeed();
+  const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+  const preview = rooms.map((r) => ({ index: r.index, name: r.name, icon: r.icon }));
+
+  const { data: run } = await sb.from('game_dungeon_runs').select('*').eq('user_id', userId).eq('seed', seed).single();
+
+  return {
+    seed,
+    resets_at: dungeonResetsAt(),
+    rooms_preview: preview,
+    room_count: rooms.length,
+    run: run || null,
+  };
+}
+
+export async function enterDungeon(sb: SupabaseClient, userId: string) {
+  const cmd = await getOrCreateCommander(sb, userId);
+  const seed = getDungeonSeed();
+  const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+
+  const { data: existing } = await sb.from('game_dungeon_runs').select('*').eq('user_id', userId).eq('seed', seed).single();
+  if (existing && existing.status === 'completed') throw new Error('Already completed this dungeon');
+
+  if (existing) return { run: existing, rooms };
+
+  const { data: run } = await sb.from('game_dungeon_runs').insert({
+    user_id: userId,
+    seed,
+    room_index: 0,
+    status: 'active',
+    rooms_json: rooms,
+    loot_json: [],
+  }).select().single();
+
+  return { run, rooms };
+}
+
+export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
+  const seed = getDungeonSeed();
+  const { data: run } = await sb.from('game_dungeon_runs').select('*').eq('user_id', userId).eq('seed', seed).eq('status', 'active').single();
+  if (!run) throw new Error('No active dungeon run');
+
+  const rooms = (run.rooms_json || []) as Array<{ index: number; enemyPower: number; lootRarity: string }>;
+  const room = rooms[run.room_index];
+  if (!room) throw new Error('Invalid room');
+
+  const cmd = await getOrCreateCommander(sb, userId);
+  if (cmd.power_rating < room.enemyPower * 0.8) throw new Error('Not strong enough for this room');
+
+  let pity = { rolls_since_rare: 0, rolls_since_legendary: 0 };
+  const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
+  if (pityRow) pity = pityRow;
+
+  const { item, newPity } = rollLoot(pity);
+  await sb.from('game_drop_pity').update(newPity).eq('user_id', userId);
+
+  const { data: invItem } = await sb.from('game_inventory').insert({
+    user_id: userId,
+    item_id: item.id,
+    name: item.name,
+    rarity: item.rarity,
+    stats_json: item.stats,
+    quantity: 1,
+  }).select().single();
+
+  const loot = [...(run.loot_json as unknown[] || []), invItem];
+  const nextIndex = run.room_index + 1;
+  const completed = nextIndex >= rooms.length;
+
+  await sb.from('game_dungeon_runs').update({
+    room_index: nextIndex,
+    status: completed ? 'completed' : 'active',
+    loot_json: loot,
+    completed_at: completed ? new Date().toISOString() : null,
+  }).eq('id', run.id);
+
+  const { data: updatedRun } = await sb.from('game_dungeon_runs').select('*').eq('id', run.id).single();
+  return { run: updatedRun, loot: invItem, completed };
 }

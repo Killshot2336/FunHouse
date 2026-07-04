@@ -8,6 +8,11 @@ import {
   UNITS_BY_PATRON,
   MISSIONS,
   STORY_INTROS,
+  LOOT_TABLE,
+  CROP_TYPES,
+  ORE_TYPES,
+  BUILDING_UPGRADE_TREES,
+  GAME_GUIDE,
   buildingCost,
   statUpgradeCost,
   calcPowerRating,
@@ -17,6 +22,9 @@ import {
   skillNodeCost,
   expandGridCost,
   ZONE_TYPES,
+  isValidBuildingKey,
+  getUnlockedCrops,
+  getPickaxeTier,
   type Patron,
   type PackType,
   type SkillBranch,
@@ -24,10 +32,26 @@ import {
 import {
   calcOfflineResources,
   calcBuildingAccrued,
+  calcStockpileAccrual,
+  mergeStockpile,
   rollLoot,
   rollPackUnit,
   defaultUnitStats,
 } from '../lib/gameEngine.js';
+import {
+  itemSellPrice,
+  getCropPrices,
+  getOrePrices,
+  getHotCrop,
+  marketResetsAt,
+  dungeonResetsAt,
+  getDungeonSeed,
+  generateDungeonRooms,
+  rollOres,
+  defaultBuildingMeta,
+  upgradeSlotCost,
+  parseStockpile,
+} from '../lib/economyEngine.js';
 import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from '../lib/progressEngine.js';
 import { awardXpDemo } from './progress.js';
 import * as gameDb from '../lib/gameSupabase.js';
@@ -60,6 +84,8 @@ function getOrCreateCommander(store: ReturnType<typeof getDemoStore>, userId: st
       story_seen: false,
       grid_size: 8,
       last_seen_at: new Date().toISOString(),
+      stockpile_json: parseStockpile(null),
+      pickaxe_tier: 1,
     };
     store.gameCommanders.push(cmd);
     for (const m of MISSIONS) {
@@ -81,11 +107,25 @@ function applyOffline(store: ReturnType<typeof getDemoStore>, userId: string) {
   const cmd = getOrCreateCommander(store, userId);
   const buildings = store.gameBuildings.filter((b) => b.user_id === userId);
   const offline = calcOfflineResources(buildings, cmd.last_seen_at);
+  const stockpileAccrual = calcStockpileAccrual(buildings, cmd.last_seen_at);
   cmd.gold += offline.gold;
   cmd.materials += offline.materials;
   cmd.food += offline.food;
   cmd.faction_currency += offline.faction;
+  cmd.stockpile_json = mergeStockpile(cmd.stockpile_json, stockpileAccrual);
   cmd.last_seen_at = new Date().toISOString();
+}
+
+function buildDemoMarket() {
+  const hourSeed = Math.floor(Date.now() / 3600000);
+  return {
+    crop_prices: getCropPrices(hourSeed),
+    ore_prices: getOrePrices(hourSeed),
+    hot_crop: getHotCrop(hourSeed),
+    market_resets_at: marketResetsAt(),
+    dungeon_seed: getDungeonSeed(),
+    dungeon_resets_at: dungeonResetsAt(),
+  };
 }
 
 function handleGameError(res: Response, err: unknown) {
@@ -119,7 +159,18 @@ router.get('/state', async (req: Request, res: Response) => {
       pity: store.gamePity.find((p) => p.user_id === user.username) || { rolls_since_rare: 0, rolls_since_legendary: 0 },
       patrols: store.gamePatrols.filter((p) => p.user_id === user.username && !p.result_json),
       story: STORY_INTROS[cmd.patron as Patron],
-      config: { buildings: BUILDINGS, units: UNITS_BY_PATRON[cmd.patron as Patron], missions: MISSIONS, packs: PACK_TYPES },
+      market: buildDemoMarket(),
+      config: {
+        buildings: BUILDINGS,
+        units: UNITS_BY_PATRON[cmd.patron as Patron],
+        missions: MISSIONS,
+        packs: PACK_TYPES,
+        items: LOOT_TABLE,
+        crops: CROP_TYPES,
+        ores: ORE_TYPES,
+        upgrade_trees: BUILDING_UPGRADE_TREES,
+        guide: GAME_GUIDE,
+      },
     });
   }
 
@@ -169,9 +220,18 @@ router.post('/build', async (req: Request, res: Response) => {
     const cost = buildingCost(building_key, 0);
     if (cmd.gold < cost) return res.status(400).json({ error: 'Not enough gold' });
     if (grid_x >= cmd.grid_size || grid_y >= cmd.grid_size) return res.status(400).json({ error: 'Out of bounds' });
+    if (!isValidBuildingKey(building_key)) return res.status(400).json({ error: 'Invalid building type' });
 
     cmd.gold -= cost;
-    const building = { id: uuid(), user_id: user.username, building_key, grid_x, grid_y, level: 1 };
+    const building = {
+      id: uuid(),
+      user_id: user.username,
+      building_key,
+      grid_x,
+      grid_y,
+      level: 1,
+      building_meta_json: defaultBuildingMeta(building_key),
+    };
     store.gameBuildings.push(building);
     const buildCount = store.gameBuildings.filter((b) => b.user_id === user.username).length;
     updateMissionProgress(store, user.username, 'build', buildCount);
@@ -396,13 +456,11 @@ router.post('/inventory/:id/sell', async (req: Request, res: Response) => {
     const item = store.gameInventory[idx];
     if (item.equipped_to_unit) return res.status(400).json({ error: 'Unequip first' });
 
-    const sellValues: Record<string, number> = {
-      common: 5, uncommon: 25, rare: 75, epic: 200, legendary: 500, mythic: 2000,
-    };
+    const price = itemSellPrice(item.item_id, item.rarity);
     const cmd = getOrCreateCommander(store, user.username);
-    cmd.gold += sellValues[item.rarity] || 5;
+    cmd.gold += price;
     store.gameInventory.splice(idx, 1);
-    return res.json({ commander: cmd });
+    return res.json({ commander: cmd, sell_price: price });
   }
 
   try {
@@ -848,6 +906,223 @@ router.post('/duels/:id/accept', async (req: Request, res: Response) => {
   }
   try {
     const result = await gameDb.acceptDuel(supabase, user.username, duelId);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/sell', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { resource_type, amount } = req.body as { resource_type: string; amount: number };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const cmd = getOrCreateCommander(store, user.username);
+    const stockpile = parseStockpile(cmd.stockpile_json);
+    const hourSeed = Math.floor(Date.now() / 3600000);
+    const cropPrices = getCropPrices(hourSeed);
+    const orePrices = getOrePrices(hourSeed);
+    let goldEarned = 0;
+
+    if (cropPrices[resource_type] !== undefined) {
+      const avail = stockpile.crops[resource_type] || 0;
+      if (avail < amount) return res.status(400).json({ error: 'Not enough crops' });
+      stockpile.crops[resource_type] = avail - amount;
+      goldEarned = cropPrices[resource_type] * amount;
+    } else if (orePrices[resource_type] !== undefined) {
+      const avail = stockpile.ores[resource_type] || 0;
+      if (avail < amount) return res.status(400).json({ error: 'Not enough ores' });
+      stockpile.ores[resource_type] = avail - amount;
+      goldEarned = orePrices[resource_type] * amount;
+    } else {
+      return res.status(400).json({ error: 'Unknown resource type' });
+    }
+
+    cmd.gold += goldEarned;
+    cmd.stockpile_json = stockpile;
+    return res.json({ commander: cmd, gold_earned: goldEarned });
+  }
+
+  try {
+    const result = await gameDb.sellResource(supabase, user.username, resource_type, amount);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/buildings/:id/upgrade', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const buildingId = String(req.params.id);
+  const { slot } = req.body as { slot: number };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const building = store.gameBuildings.find((b) => b.id === buildingId && b.user_id === user.username);
+    if (!building) return res.status(404).json({ error: 'Building not found' });
+
+    const meta = (building.building_meta_json || defaultBuildingMeta(building.building_key)) as {
+      upgrades: Record<string, number>; crop?: string;
+    };
+    const slotKey = String(slot);
+    const currentLevel = meta.upgrades[slotKey] || 0;
+    const cost = upgradeSlotCost(building.building_key, slot, currentLevel);
+    const cmd = getOrCreateCommander(store, user.username);
+    if (cmd.gold < cost.gold || cmd.materials < cost.materials) {
+      return res.status(400).json({ error: 'Not enough resources' });
+    }
+    cmd.gold -= cost.gold;
+    cmd.materials -= cost.materials;
+    meta.upgrades[slotKey] = currentLevel + 1;
+    building.building_meta_json = meta;
+    if (building.building_key === 'smithy' && slot === 1) {
+      const smithy = store.gameBuildings.find((b) => b.user_id === user.username && b.building_key === 'smithy');
+      const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || meta.upgrades;
+      cmd.pickaxe_tier = getPickaxeTier(smithyUpgrades, cmd.pickaxe_tier || 1);
+    }
+    return res.json({ building, commander: cmd });
+  }
+
+  try {
+    const result = await gameDb.upgradeBuildingSlot(supabase, user.username, buildingId, slot);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/buildings/:id/crop', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const buildingId = String(req.params.id);
+  const { crop } = req.body as { crop: string };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const building = store.gameBuildings.find((b) => b.id === buildingId && b.user_id === user.username);
+    if (!building) return res.status(404).json({ error: 'Building not found' });
+    const meta = (building.building_meta_json || defaultBuildingMeta(building.building_key)) as {
+      upgrades: Record<string, number>; crop?: string;
+    };
+    const unlocked = getUnlockedCrops(meta.upgrades || {});
+    if (!unlocked.includes(crop)) return res.status(400).json({ error: 'Crop not unlocked' });
+    meta.crop = crop;
+    building.building_meta_json = meta;
+    return res.json({ building });
+  }
+
+  try {
+    const result = await gameDb.setBuildingCrop(supabase, user.username, buildingId, crop);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/mine/collect', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { building_id } = req.body as { building_id: string };
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const building = store.gameBuildings.find((b) => b.id === building_id && b.user_id === user.username);
+    if (!building || building.building_key !== 'mine') return res.status(404).json({ error: 'Mine not found' });
+    const cmd = getOrCreateCommander(store, user.username);
+    const meta = (building.building_meta_json || defaultBuildingMeta('mine')) as { upgrades: Record<string, number> };
+    const smithy = store.gameBuildings.find((b) => b.user_id === user.username && b.building_key === 'smithy');
+    const smithyUpgrades = ((smithy?.building_meta_json as { upgrades?: Record<string, number> })?.upgrades) || {};
+    const pickaxeTier = getPickaxeTier(smithyUpgrades, cmd.pickaxe_tier || 1);
+    const ores = rollOres(pickaxeTier, building.level + (meta.upgrades?.['1'] || 0), Date.now());
+    const stockpile = parseStockpile(cmd.stockpile_json);
+    for (const [k, v] of Object.entries(ores)) stockpile.ores[k] = (stockpile.ores[k] || 0) + v;
+    cmd.stockpile_json = stockpile;
+    cmd.pickaxe_tier = pickaxeTier;
+    return res.json({ ores, commander: cmd, pickaxe_tier: pickaxeTier });
+  }
+
+  try {
+    const result = await gameDb.mineCollect(supabase, user.username, building_id);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.get('/dungeon', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const cmd = getOrCreateCommander(store, user.username);
+    const seed = getDungeonSeed();
+    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+    const run = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed);
+    return res.json({
+      seed,
+      resets_at: dungeonResetsAt(),
+      rooms_preview: rooms.map((r) => ({ index: r.index, name: r.name, icon: r.icon })),
+      room_count: rooms.length,
+      run: run || null,
+    });
+  }
+
+  try {
+    const result = await gameDb.getDungeon(supabase, user.username);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/dungeon/enter', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const cmd = getOrCreateCommander(store, user.username);
+    const seed = getDungeonSeed();
+    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+    const existing = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed);
+    if (existing?.status === 'completed') return res.status(400).json({ error: 'Already completed this dungeon' });
+    if (existing) return res.json({ run: existing, rooms });
+    const run = {
+      id: uuid(), user_id: user.username, seed, room_index: 0, status: 'active',
+      rooms_json: rooms, loot_json: [], completed_at: null,
+    };
+    store.gameDungeonRuns.push(run);
+    return res.json({ run, rooms });
+  }
+
+  try {
+    const result = await gameDb.enterDungeon(supabase, user.username);
+    res.json(result);
+  } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/dungeon/claim', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const seed = getDungeonSeed();
+    const run = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed && r.status === 'active');
+    if (!run) return res.status(404).json({ error: 'No active dungeon run' });
+    const rooms = run.rooms_json as Array<{ index: number; enemyPower: number; lootRarity: string }>;
+    const room = rooms[run.room_index];
+    if (!room) return res.status(400).json({ error: 'Invalid room' });
+    const cmd = getOrCreateCommander(store, user.username);
+    if (cmd.power_rating < room.enemyPower * 0.8) return res.status(400).json({ error: 'Not strong enough' });
+
+    let pity = store.gamePity.find((p) => p.user_id === user.username);
+    if (!pity) { pity = { user_id: user.username, rolls_since_rare: 0, rolls_since_legendary: 0 }; store.gamePity.push(pity); }
+    const { item, newPity } = rollLoot(pity);
+    pity.rolls_since_rare = newPity.rolls_since_rare;
+    pity.rolls_since_legendary = newPity.rolls_since_legendary;
+
+    const inv = {
+      id: uuid(), user_id: user.username, item_id: item.id, name: item.name,
+      rarity: item.rarity, stats: item.stats, quantity: 1, equipped_to_unit: null,
+    };
+    store.gameInventory.push(inv);
+    run.loot_json = [...(run.loot_json || []), inv];
+    run.room_index += 1;
+    if (run.room_index >= rooms.length) {
+      run.status = 'completed';
+      run.completed_at = new Date().toISOString();
+    }
+    return res.json({ run, loot: inv, completed: run.status === 'completed' });
+  }
+
+  try {
+    const result = await gameDb.claimDungeonRoom(supabase, user.username);
     res.json(result);
   } catch (err) { handleGameError(res, err); }
 });

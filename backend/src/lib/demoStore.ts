@@ -32,8 +32,13 @@ interface DemoStore {
     user_id: string; patron: string; gold: number; materials: number; food: number;
     faction_currency: number; village_level: number; power_rating: number;
     story_chapter: number; story_seen: boolean; grid_size: number; last_seen_at: string;
+    stockpile_json?: { crops: Record<string, number>; ores: Record<string, number>; wood: number; stone: number };
+    pickaxe_tier?: number;
   }>;
-  gameBuildings: Array<{ id: string; user_id: string; building_key: string; grid_x: number; grid_y: number; level: number }>;
+  gameBuildings: Array<{
+    id: string; user_id: string; building_key: string; grid_x: number; grid_y: number; level: number;
+    building_meta_json?: Record<string, unknown>;
+  }>;
   gameUnits: Array<{
     id: string; user_id: string; unit_key: string; slot_index: number; rarity?: string;
     stats: Record<string, unknown>;
@@ -56,6 +61,10 @@ interface DemoStore {
   gameZones: Array<{ id: string; zone_x: number; zone_y: number; zone_type: string; owner_user_id: string | null; yield_json: Record<string, number>; last_claim_at: string }>;
   gameZoneDeployments: Array<{ id: string; zone_id: string; user_id: string; unit_ids: string[]; deployed_power: number }>;
   gameDuels: Array<{ id: string; challenger_id: string; defender_id: string; status: string; challenger_stake_json?: Record<string, number>; defender_stake_json?: Record<string, number>; winner_id?: string }>;
+  gameDungeonRuns: Array<{
+    id: string; user_id: string; seed: number; room_index: number; status: string;
+    loot_json: unknown[]; rooms_json: unknown[]; completed_at: string | null;
+  }>;
 }
 
 const MASTER_TASKS = [
@@ -143,6 +152,7 @@ function createInitialStore(): DemoStore {
     gameZones: seedZones(),
     gameZoneDeployments: [],
     gameDuels: [],
+    gameDungeonRuns: [],
   };
 }
 

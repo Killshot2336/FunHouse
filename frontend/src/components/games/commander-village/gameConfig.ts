@@ -4,11 +4,55 @@ export type SkillBranch = 'health' | 'damage' | 'shield';
 export type PackType = 'standard' | 'faction' | 'premium';
 
 export const BUILDINGS: Record<string, { name: string; icon: string; resource: string }> = {
-  farm: { name: 'Farm', icon: '🌾', resource: 'food' },
+  farm: { name: 'Farm', icon: '🌾', resource: 'crop' },
   mine: { name: 'Mine', icon: '⛏️', resource: 'materials' },
   market: { name: 'Market', icon: '🏪', resource: 'gold' },
   hq: { name: 'Faction HQ', icon: '🏛️', resource: 'faction' },
+  greenhouse: { name: 'Greenhouse', icon: '🪴', resource: 'crop' },
+  lumber_mill: { name: 'Lumber Mill', icon: '🪵', resource: 'wood' },
+  quarry: { name: 'Quarry', icon: '🪨', resource: 'stone' },
+  smithy: { name: 'Smithy', icon: '🔨', resource: 'materials' },
+  barracks: { name: 'Barracks', icon: '🛡️', resource: 'gold' },
+  library: { name: 'Library', icon: '📚', resource: 'gold' },
+  shrine: { name: 'Shrine', icon: '⛩️', resource: 'faction' },
+  warehouse: { name: 'Warehouse', icon: '📦', resource: 'gold' },
+  workshop: { name: 'Workshop', icon: '🔧', resource: 'materials' },
+  tavern: { name: 'Tavern', icon: '🍺', resource: 'gold' },
 };
+
+export const BUILDING_COSTS: Record<string, { base: number; growth: number }> = {
+  farm: { base: 50, growth: 1.15 },
+  mine: { base: 75, growth: 1.15 },
+  market: { base: 100, growth: 1.18 },
+  hq: { base: 200, growth: 1.2 },
+  greenhouse: { base: 80, growth: 1.16 },
+  lumber_mill: { base: 70, growth: 1.14 },
+  quarry: { base: 85, growth: 1.15 },
+  smithy: { base: 120, growth: 1.18 },
+  barracks: { base: 150, growth: 1.2 },
+  library: { base: 110, growth: 1.17 },
+  shrine: { base: 130, growth: 1.19 },
+  warehouse: { base: 90, growth: 1.12 },
+  workshop: { base: 100, growth: 1.16 },
+  tavern: { base: 95, growth: 1.15 },
+};
+
+export const CROP_TYPES = [
+  { key: 'corn', name: 'Corn', icon: '🌽', basePrice: 10 },
+  { key: 'wheat', name: 'Wheat', icon: '🌾', basePrice: 8 },
+  { key: 'pumpkin', name: 'Pumpkin', icon: '🎃', basePrice: 14 },
+  { key: 'berries', name: 'Berries', icon: '🫐', basePrice: 12 },
+  { key: 'mushrooms', name: 'Mushrooms', icon: '🍄', basePrice: 16 },
+  { key: 'herbs', name: 'Herbs', icon: '🌿', basePrice: 11 },
+];
+
+export const ORE_TYPES = [
+  { key: 'copper', name: 'Copper', icon: '🟤', basePrice: 5, minPickaxe: 1 },
+  { key: 'iron', name: 'Iron', icon: '⚙️', basePrice: 12, minPickaxe: 1 },
+  { key: 'gold', name: 'Gold Ore', icon: '🟡', basePrice: 25, minPickaxe: 2 },
+  { key: 'crystal', name: 'Crystal', icon: '💎', basePrice: 45, minPickaxe: 3 },
+  { key: 'mythril', name: 'Mythril', icon: '✨', basePrice: 80, minPickaxe: 4 },
+];
 
 export const COSMETIC_OPTIONS = {
   armor: ['default', 'leather', 'plate', 'shadow', 'power', 'arcane'],
@@ -58,13 +102,6 @@ export function buildingCost(baseCost: number, growth: number, level: number): n
   return Math.floor(baseCost * Math.pow(growth, level));
 }
 
-export const BUILDING_COSTS: Record<string, { base: number; growth: number }> = {
-  farm: { base: 50, growth: 1.15 },
-  mine: { base: 75, growth: 1.15 },
-  market: { base: 100, growth: 1.18 },
-  hq: { base: 200, growth: 1.2 },
-};
-
 export function normalizeCombatStats(stats: Record<string, unknown>): {
   health: number; damage: number; shield: number; skill_nodes: string[];
 } {
@@ -99,4 +136,32 @@ export const ZONE_TYPES: Record<string, { name: string; icon: string; yield: Rec
 
 export function xpToLevel(level: number): number {
   return Math.floor(100 * Math.pow(level, 1.5));
+}
+
+export interface LootItemDef {
+  id: string;
+  name: string;
+  rarity: Rarity;
+  sellValue: number;
+  stats: Record<string, number>;
+  description: string;
+  item_type: string;
+  use_hint: string;
+}
+
+export function itemSellPrice(itemId: string, rarity: string, items?: LootItemDef[]): number {
+  const def = items?.find((i) => i.id === itemId);
+  if (def) return def.sellValue;
+  const fallback: Record<string, number> = {
+    common: 5, uncommon: 25, rare: 75, epic: 200, legendary: 500, mythic: 2000,
+  };
+  return fallback[rarity] || 5;
+}
+
+export function getUnlockedCrops(upgradeLevels: Record<string, number>): string[] {
+  const slot3 = upgradeLevels['3'] || 0;
+  const base = ['corn', 'wheat'];
+  if (slot3 >= 1) base.push('pumpkin', 'berries');
+  if (slot3 >= 2) base.push('mushrooms', 'herbs');
+  return base;
 }

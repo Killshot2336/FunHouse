@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from '../../../stores';
 import { api, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
@@ -26,10 +26,6 @@ export function WorldMap({ state, onUpdate }: WorldMapProps) {
   const [zones, setZones] = useState<Zone[]>([]);
   const [selected, setSelected] = useState<Zone | null>(null);
   const [selectedUnits, setSelectedUnits] = useState<string[]>([]);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const dragging = useRef(false);
-  const lastPos = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
     api<{ zones: Zone[] }>('/game/zones', {}, token).then((d) => setZones(d.zones));
@@ -81,40 +77,17 @@ export function WorldMap({ state, onUpdate }: WorldMapProps) {
       <div className="flex flex-wrap gap-2 items-center justify-between">
         <div>
           <h3 className="text-sm font-bold">World Map</h3>
-          <p className="text-xs opacity-50">Pinch/scroll zoom · drag to pan · hourly zone yields</p>
+          <p className="text-xs opacity-50">Tap zones to deploy and attack</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setScale((s) => Math.min(2.5, s + 0.2))} className="theme-btn text-xs">+</button>
-          <button onClick={() => setScale((s) => Math.max(0.5, s - 0.2))} className="theme-btn text-xs">−</button>
-          <button onClick={expandGrid} className="theme-btn theme-btn-primary text-xs">
-            Expand Village ({state.commander.grid_size}→{state.commander.grid_size + 2})
-          </button>
-        </div>
+        <button onClick={expandGrid} className="theme-btn theme-btn-primary text-xs">
+          Expand Village ({state.commander.grid_size}→{state.commander.grid_size + 2})
+        </button>
       </div>
 
-      <div
-        className="overflow-hidden border border-current/20 rounded-lg bg-black/30 relative"
-        style={{ height: 320 }}
-        onWheel={(e) => setScale((s) => Math.max(0.5, Math.min(2.5, s - e.deltaY * 0.001)))}
-        onMouseDown={(e) => { dragging.current = true; lastPos.current = { x: e.clientX, y: e.clientY }; }}
-        onMouseUp={() => { dragging.current = false; }}
-        onMouseLeave={() => { dragging.current = false; }}
-        onMouseMove={(e) => {
-          if (!dragging.current) return;
-          setOffset((o) => ({
-            x: o.x + e.clientX - lastPos.current.x,
-            y: o.y + e.clientY - lastPos.current.y,
-          }));
-          lastPos.current = { x: e.clientX, y: e.clientY };
-        }}
-      >
+      <div className="overflow-x-auto flex justify-center">
         <div
-          className="grid gap-0.5 p-2 transition-transform"
-          style={{
-            gridTemplateColumns: 'repeat(12, 24px)',
-            transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-            transformOrigin: 'center',
-          }}
+          className="grid gap-0.5 p-2 border border-current/20 rounded-lg bg-black/30"
+          style={{ gridTemplateColumns: 'repeat(12, 28px)' }}
         >
           {zones.map((z) => {
             const info = ZONE_TYPES[z.zone_type];
@@ -124,8 +97,8 @@ export function WorldMap({ state, onUpdate }: WorldMapProps) {
               <button
                 key={z.id}
                 onClick={() => setSelected(z)}
-                className={`w-6 h-6 text-xs flex items-center justify-center rounded transition-all ${
-                  isSelected ? 'ring-2 ring-current scale-125 z-10' : ''
+                className={`w-7 h-7 text-xs flex items-center justify-center rounded transition-all ${
+                  isSelected ? 'ring-2 ring-current scale-110 z-10' : ''
                 }`}
                 style={{
                   background: z.owner_user_id ? `${ownerColors[z.owner_user_id] || '#666'}44` : '#111',

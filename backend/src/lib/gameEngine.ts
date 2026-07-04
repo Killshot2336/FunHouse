@@ -10,6 +10,7 @@ import {
   type Rarity,
   type Patron,
 } from './gameConfig.js';
+import { parseStockpile, type Stockpile } from './economyEngine.js';
 
 export interface CommanderState {
   user_id: string;
@@ -33,6 +34,7 @@ export interface BuildingState {
   grid_x: number;
   grid_y: number;
   level: number;
+  building_meta_json?: Record<string, unknown>;
 }
 
 export interface UnitState {
@@ -117,7 +119,7 @@ export function calcBuildingAccrued(
   building_key: string;
   grid_x: number;
   grid_y: number;
-  resource: 'gold' | 'materials' | 'food' | 'faction';
+  resource: 'gold' | 'materials' | 'food' | 'faction' | 'crop' | 'wood' | 'stone';
   amount: number;
   ratePerHour: number;
 }> {
@@ -127,11 +129,21 @@ export function calcBuildingAccrued(
   );
   if (elapsed < 0) return [];
 
-  const resourceMap: Record<string, 'gold' | 'materials' | 'food' | 'faction'> = {
+  const resourceMap: Record<string, 'gold' | 'materials' | 'food' | 'faction' | 'crop' | 'wood' | 'stone'> = {
     market: 'gold',
     mine: 'materials',
-    farm: 'food',
+    farm: 'crop',
+    greenhouse: 'crop',
     hq: 'faction',
+    shrine: 'faction',
+    lumber_mill: 'wood',
+    quarry: 'stone',
+    smithy: 'materials',
+    barracks: 'gold',
+    library: 'gold',
+    warehouse: 'gold',
+    workshop: 'materials',
+    tavern: 'gold',
   };
 
   return buildings.map((b) => {
@@ -164,10 +176,10 @@ export function calcOfflineResources(
   for (const b of buildings) {
     const rate = buildingRate(b.building_key, b.level) * elapsed * 60;
     const bld = b.building_key;
-    if (bld === 'market') gold += rate;
-    else if (bld === 'mine') materials += rate;
+    if (bld === 'market' || bld === 'barracks' || bld === 'library' || bld === 'warehouse' || bld === 'tavern') gold += rate;
+    else if (bld === 'mine' || bld === 'smithy' || bld === 'workshop') materials += rate;
     else if (bld === 'farm') food += rate;
-    else if (bld === 'hq') faction += rate;
+    else if (bld === 'hq' || bld === 'shrine') faction += rate;
   }
   return {
     gold: Math.floor(gold),
@@ -175,6 +187,48 @@ export function calcOfflineResources(
     food: Math.floor(food),
     faction: Math.floor(faction),
   };
+}
+
+export function calcStockpileAccrual(
+  buildings: BuildingState[],
+  lastSeen: string,
+  maxHours = 8
+): Stockpile {
+  const elapsed = Math.min(
+    (Date.now() - new Date(lastSeen).getTime()) / (1000 * 60 * 60),
+    maxHours
+  );
+  const stockpile = parseStockpile(null);
+  if (elapsed < 0.01) return stockpile;
+
+  for (const b of buildings) {
+    const rate = buildingRate(b.building_key, b.level) * elapsed * 60;
+    const meta = (b.building_meta_json || {}) as { crop?: string; upgrades?: Record<string, number> };
+    const yieldMult = 1 + ((meta.upgrades?.['1'] || 0) * 0.1);
+
+    if (b.building_key === 'farm' || b.building_key === 'greenhouse') {
+      const crop = meta.crop || 'corn';
+      stockpile.crops[crop] = (stockpile.crops[crop] || 0) + Math.floor(rate * yieldMult);
+    } else if (b.building_key === 'lumber_mill') {
+      stockpile.wood += Math.floor(rate * yieldMult);
+    } else if (b.building_key === 'quarry') {
+      stockpile.stone += Math.floor(rate * yieldMult);
+    }
+  }
+  return stockpile;
+}
+
+export function mergeStockpile(existing: unknown, accrual: Stockpile): Stockpile {
+  const base = parseStockpile(existing);
+  for (const [k, v] of Object.entries(accrual.crops)) {
+    base.crops[k] = (base.crops[k] || 0) + v;
+  }
+  for (const [k, v] of Object.entries(accrual.ores)) {
+    base.ores[k] = (base.ores[k] || 0) + v;
+  }
+  base.wood += accrual.wood;
+  base.stone += accrual.stone;
+  return base;
 }
 
 export function defaultUnitStats(): { atk: number; def: number; spd: number; luck: number; health: number; damage: number; shield: number; skill_nodes: string[] } {

@@ -1,5 +1,9 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { BUILDINGS, BUILDING_COSTS, buildingCost } from './gameConfig';
+import { useAuthStore } from '../../../stores';
+import { api } from '../../../lib/api';
+import { BUILDINGS, BUILDING_COSTS, buildingCost, getUnlockedCrops, CROP_TYPES } from './gameConfig';
+import { BuildingUpgrades } from './BuildingUpgrades';
 import type { GameState } from './CommanderVillage';
 
 const RESOURCE_ICONS: Record<string, string> = {
@@ -7,6 +11,9 @@ const RESOURCE_ICONS: Record<string, string> = {
   materials: '⛏️',
   food: '🌾',
   faction: '⭐',
+  crop: '🌽',
+  wood: '🪵',
+  stone: '🪨',
 };
 
 interface BuildingPanelProps {
@@ -23,6 +30,8 @@ interface BuildingPanelProps {
 export function BuildingPanel({
   state, x, y, liveAmount, ratePerHour, onUpgrade, onClose, upgrading,
 }: BuildingPanelProps) {
+  const { token } = useAuthStore();
+  const [collecting, setCollecting] = useState(false);
   const building = state.buildings.find((b) => b.grid_x === x && b.grid_y === y);
 
   if (!building) {
@@ -46,12 +55,38 @@ export function BuildingPanel({
   const upgradeCost = costs ? buildingCost(costs.base, costs.growth, building.level) : 0;
   const canAfford = state.commander.gold >= upgradeCost;
   const resourceIcon = RESOURCE_ICONS[info?.resource || 'gold'] || '🪙';
+  const meta = (building.building_meta_json || { upgrades: {}, crop: 'corn' }) as {
+    upgrades: Record<string, number>;
+    crop?: string;
+  };
+  const isCropBuilding = ['farm', 'greenhouse'].includes(building.building_key);
+  const unlockedCrops = getUnlockedCrops(meta.upgrades || {});
+
+  const setCrop = async (crop: string) => {
+    await api(`/game/buildings/${building.id}/crop`, {
+      method: 'POST',
+      body: JSON.stringify({ crop }),
+    }, token);
+    onUpgrade();
+  };
+
+  const collectMine = async () => {
+    setCollecting(true);
+    try {
+      await api('/game/mine/collect', {
+        method: 'POST',
+        body: JSON.stringify({ building_id: building.id }),
+      }, token);
+      onUpgrade();
+    } catch { /* ignore */ }
+    setCollecting(false);
+  };
 
   return (
     <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
-      className="theme-card p-4 space-y-3"
+      className="theme-card p-4 space-y-3 max-h-[70vh] overflow-y-auto"
     >
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
@@ -70,19 +105,56 @@ export function BuildingPanel({
           +{liveAmount.toFixed(1)} {resourceIcon}
         </div>
         <div className="text-xs opacity-50">{ratePerHour.toFixed(1)}/hr</div>
+        {isCropBuilding && meta.crop && (
+          <div className="text-xs mt-1 opacity-60">
+            Growing: {CROP_TYPES.find((c) => c.key === meta.crop)?.icon} {meta.crop}
+          </div>
+        )}
       </div>
 
+      {isCropBuilding && (
+        <div>
+          <div className="text-xs font-bold mb-1">Crop Type</div>
+          <div className="flex flex-wrap gap-1">
+            {unlockedCrops.map((cropKey) => {
+              const crop = CROP_TYPES.find((c) => c.key === cropKey);
+              return (
+                <button
+                  key={cropKey}
+                  onClick={() => setCrop(cropKey)}
+                  className={`theme-btn text-xs px-2 py-1 ${meta.crop === cropKey ? 'theme-btn-primary' : ''}`}
+                >
+                  {crop?.icon} {crop?.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {building.building_key === 'mine' && (
+        <button
+          onClick={collectMine}
+          disabled={collecting}
+          className="theme-btn theme-btn-primary w-full text-sm py-2"
+        >
+          {collecting ? 'Mining...' : `⛏️ Collect Ores (Pickaxe T${state.commander.pickaxe_tier || 1})`}
+        </button>
+      )}
+
       <div className="text-xs opacity-60">
-        Upgrade to Lv.{building.level + 1} for {upgradeCost}🪙
+        Level upgrade to Lv.{building.level + 1} for {upgradeCost}🪙
       </div>
 
       <button
         onClick={onUpgrade}
         disabled={upgrading || !canAfford}
-        className={`theme-btn theme-btn-primary w-full text-sm py-2 ${!canAfford ? 'opacity-40' : ''}`}
+        className={`theme-btn w-full text-sm py-2 ${!canAfford ? 'opacity-40' : ''}`}
       >
-        {upgrading ? 'Upgrading...' : canAfford ? `Upgrade (${upgradeCost}🪙)` : 'Not enough gold'}
+        {upgrading ? 'Upgrading...' : canAfford ? `Upgrade Level (${upgradeCost}🪙)` : 'Not enough gold'}
       </button>
+
+      <BuildingUpgrades state={state} building={building} onUpdate={onUpgrade} />
     </motion.div>
   );
 }
