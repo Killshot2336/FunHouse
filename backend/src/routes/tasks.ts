@@ -9,6 +9,12 @@ router.use(authMiddleware);
 
 const USERS_LIST = ['aden', 'edward', 'jamie'];
 
+function normalizeAssignment(row: Record<string, unknown>) {
+  const task = row.master_tasks || row.task;
+  const { master_tasks: _m, task: _t, ...rest } = row;
+  return { ...rest, task };
+}
+
 function shuffleArray<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -61,11 +67,13 @@ router.get('/daily', async (_req: Request, res: Response) => {
         ...a,
         task: store.masterTasks.find((t) => t.id === a.task_id),
       }));
-    return res.json(assignments);
+    return res.json(assignments.map((a) => ({ ...a, task: a.task })));
   }
 
   const { data: existing } = await supabase.from('daily_assignments').select('*, master_tasks(*)').eq('assigned_date', today);
-  if (existing && existing.length >= 9) return res.json(existing);
+  if (existing && existing.length >= 9) {
+    return res.json(existing.map(normalizeAssignment));
+  }
 
   const { data: tasks } = await supabase.from('master_tasks').select('*').eq('active', true);
   if (!tasks?.length) return res.json([]);
@@ -81,7 +89,7 @@ router.get('/daily', async (_req: Request, res: Response) => {
 
   await supabase.from('daily_assignments').upsert(inserts, { onConflict: 'user_id,task_id,assigned_date' });
   const { data } = await supabase.from('daily_assignments').select('*, master_tasks(*)').eq('assigned_date', today);
-  res.json(data);
+  res.json((data || []).map(normalizeAssignment));
 });
 
 router.post('/complete/:id', async (req: Request, res: Response) => {
@@ -158,6 +166,57 @@ router.post('/complete/:id', async (req: Request, res: Response) => {
   );
 
   res.json({ assignment });
+});
+
+router.post('/undo/:id', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  const { id } = req.params;
+  const weekStart = getWeekStart();
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const assignment = store.dailyAssignments.find((a) => a.id === id);
+    if (!assignment || !assignment.completed) return res.status(400).json({ error: 'Task not completed or not found' });
+    if (assignment.completed_by && assignment.completed_by !== user.username) {
+      return res.status(403).json({ error: 'Only the person who completed it can undo' });
+    }
+
+    assignment.completed = false;
+    assignment.completed_at = undefined;
+    assignment.completed_by = undefined;
+
+    const boss = store.weeklyBoss.find((b) => b.week_start === weekStart);
+    if (boss) boss.current_health = Math.min(boss.max_health, boss.current_health + 1);
+
+    const stat = store.taskStats.find((s) => s.user_id === user.username && s.week_start === weekStart);
+    if (stat && stat.tasks_completed > 0) stat.tasks_completed -= 1;
+
+    return res.json({ assignment, undone: true });
+  }
+
+  const { data: assignment } = await supabase.from('daily_assignments').select('*').eq('id', id).single();
+  if (!assignment?.completed) return res.status(400).json({ error: 'Task not completed or not found' });
+  if (assignment.completed_by && assignment.completed_by !== user.username) {
+    return res.status(403).json({ error: 'Only the person who completed it can undo' });
+  }
+
+  await supabase.from('daily_assignments').update({
+    completed: false, completed_at: null, completed_by: null,
+  }).eq('id', id);
+
+  const { data: boss } = await supabase.from('weekly_boss').select('*').eq('week_start', weekStart).single();
+  if (boss) {
+    await supabase.from('weekly_boss').update({
+      current_health: Math.min(boss.max_health, boss.current_health + 1),
+    }).eq('id', boss.id);
+  }
+
+  const { data: stat } = await supabase.from('task_stats').select('*').eq('user_id', user.username).eq('week_start', weekStart).single();
+  if (stat && stat.tasks_completed > 0) {
+    await supabase.from('task_stats').update({ tasks_completed: stat.tasks_completed - 1 }).eq('id', stat.id);
+  }
+
+  res.json({ assignment: { ...assignment, completed: false }, undone: true });
 });
 
 router.get('/boss', async (_req: Request, res: Response) => {

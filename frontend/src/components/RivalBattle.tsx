@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useAuthStore } from '../stores';
+import { motion } from 'framer-motion';
+import { useAuthStore, useNotificationStore } from '../stores';
 import { api } from '../lib/api';
 
 interface RivalLog {
@@ -25,8 +26,10 @@ interface RivalState {
 }
 
 export function RivalBattle() {
-  const { token } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [state, setState] = useState<RivalState | null>(null);
+  const [resetting, setResetting] = useState(false);
 
   const fetchState = useCallback(async () => {
     try {
@@ -37,9 +40,23 @@ export function RivalBattle() {
 
   useEffect(() => {
     fetchState();
-    const interval = setInterval(fetchState, 8000);
+    const interval = setInterval(fetchState, 30000);
     return () => clearInterval(interval);
   }, [fetchState]);
+
+  const resetBattle = async () => {
+    if (!confirm('Reset this week\'s faction war? HP and battle log start fresh.')) return;
+    setResetting(true);
+    try {
+      const data = await api<RivalState>('/rival/reset', { method: 'POST' }, token);
+      setState(data);
+      notify('Faction war reset — fight again!', 'success');
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Cannot reset', 'error');
+    } finally {
+      setResetting(false);
+    }
+  };
 
   if (!state?.active || !state.battle) {
     if (state && !state.active) {
@@ -63,13 +80,23 @@ export function RivalBattle() {
   const lost = battle.outcome === 'rival_win';
 
   return (
-    <div className="theme-card p-6 border-2 border-red-500/30">
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="theme-card p-6 border-2 border-red-500/40 card-glow battle-pulse"
+    >
       <div className="flex items-center justify-between mb-1">
         <div>
-          <h2 className="font-bold text-lg tracking-wider text-red-400">FRIDAY FACTION WAR</h2>
+          <h2 className="font-bold text-lg tracking-widest text-red-400 glow-text">FRIDAY FACTION WAR</h2>
           <p className="text-xs opacity-60">{rival?.name} — led by {rival?.commander}</p>
         </div>
-        <div className="text-4xl">⚔️</div>
+        <motion.div
+          className="text-4xl"
+          animate={{ rotate: [0, -5, 5, 0] }}
+          transition={{ repeat: Infinity, duration: 2 }}
+        >
+          ⚔️
+        </motion.div>
       </div>
 
       <div className="mt-4 space-y-3">
@@ -79,7 +106,11 @@ export function RivalBattle() {
             <span>{battle.rival_hp_current} / {battle.rival_hp_max}</span>
           </div>
           <div className="boss-health-bar">
-            <div className="boss-health-fill bg-red-600" style={{ width: `${rivalPct}%` }} />
+            <motion.div
+              className="boss-health-fill bg-red-600"
+              animate={{ width: `${rivalPct}%` }}
+              transition={{ duration: 0.6 }}
+            />
           </div>
         </div>
 
@@ -89,7 +120,11 @@ export function RivalBattle() {
             <span>{battle.household_hp_current} / {battle.household_hp_max}</span>
           </div>
           <div className="boss-health-bar">
-            <div className="boss-health-fill" style={{ width: `${housePct}%` }} />
+            <motion.div
+              className="boss-health-fill"
+              animate={{ width: `${housePct}%` }}
+              transition={{ duration: 0.6 }}
+            />
           </div>
         </div>
       </div>
@@ -99,23 +134,39 @@ export function RivalBattle() {
 
       {!won && !lost && (
         <p className="text-xs text-center mt-3 opacity-60">
-          Complete chores and grow your army to deal damage. The rival fights back while you&apos;re idle.
+          Complete chores to deal damage. Rival counter-attacks every 30 min while you&apos;re idle.
         </p>
       )}
 
+      {(lost || won) && user?.username === 'aden' && (
+        <motion.button
+          whileTap={{ scale: 0.95 }}
+          onClick={resetBattle}
+          disabled={resetting}
+          className="theme-btn theme-btn-primary w-full mt-4 py-2 text-sm"
+        >
+          {resetting ? 'Resetting...' : '↩ Reset Battle — Start Over'}
+        </motion.button>
+      )}
+
       {logs && logs.length > 0 && (
-        <div className="mt-4 max-h-32 overflow-y-auto space-y-1">
+        <div className="mt-4 max-h-28 overflow-y-auto space-y-1">
           <h3 className="text-xs uppercase tracking-wider opacity-50 mb-2">Battle Log</h3>
-          {logs.slice(-8).map((log, i) => (
-            <p key={i} className={`text-xs ${log.actor === 'rival' ? 'text-red-400/80' : log.actor === 'household' ? 'text-green-400/80' : 'opacity-60'}`}>
+          {logs.slice(-6).map((log, i) => (
+            <motion.p
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className={`text-xs ${log.actor === 'rival' ? 'text-red-400/80' : log.actor === 'household' ? 'text-green-400/80' : 'opacity-60'}`}
+            >
               {log.actor === 'rival' && '💀 '}
               {log.actor === 'household' && '⚡ '}
               {log.message}
               {log.damage > 0 && <span className="opacity-50"> (-{log.damage})</span>}
-            </p>
+            </motion.p>
           ))}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

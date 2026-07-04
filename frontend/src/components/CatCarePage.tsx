@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useAuthStore, useNotificationStore } from '../stores';
 import { api, getUrgencyClass, formatRelativeTime } from '../lib/api';
 import { themeCopy } from '../themes/copy';
@@ -14,7 +15,7 @@ interface LitterBox {
   id: string;
   name: string;
   location: string;
-  last_cleaning: { cleaned_by: string; cleaned_at: string } | null;
+  last_cleaning: { id?: string; cleaned_by: string; cleaned_at: string } | null;
   urgency: string;
 }
 
@@ -36,6 +37,7 @@ export function CatCarePage() {
   const [boxes, setBoxes] = useState<LitterBox[]>([]);
   const [feedings, setFeedings] = useState<FeedingLog[]>([]);
   const [selectedCats, setSelectedCats] = useState<string[]>([]);
+  const [feedingAnim, setFeedingAnim] = useState(false);
 
   const fetch = useCallback(async () => {
     try {
@@ -47,8 +49,10 @@ export function CatCarePage() {
       setCats(c);
       setBoxes(b);
       setFeedings(f);
-    } catch { /* ignore */ }
-  }, [token]);
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Could not load cats', 'error');
+    }
+  }, [token, notify]);
 
   useEffect(() => {
     fetch();
@@ -57,20 +61,51 @@ export function CatCarePage() {
   }, [fetch]);
 
   const cleanBox = async (id: string) => {
-    await api(`/cat-care/litter-boxes/${id}/clean`, { method: 'POST' }, token);
-    notify('Litter box cleaned!', 'success');
-    fetch();
+    try {
+      await api(`/cat-care/litter-boxes/${id}/clean`, { method: 'POST' }, token);
+      notify('Litter box cleaned!', 'success');
+      fetch();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed', 'error');
+    }
+  };
+
+  const undoCleaning = async (cleaningId: string) => {
+    try {
+      await api(`/cat-care/litter-boxes/cleanings/${cleaningId}`, { method: 'DELETE' }, token);
+      notify('Cleaning undone', 'info');
+      fetch();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Cannot undo', 'error');
+    }
   };
 
   const logFeeding = async (names: string[]) => {
     if (!names.length) return;
-    await api('/cat-care/feeding', {
-      method: 'POST',
-      body: JSON.stringify({ cat_names: names }),
-    }, token);
-    setSelectedCats([]);
-    notify('Feeding logged!', 'success');
-    fetch();
+    setFeedingAnim(true);
+    try {
+      await api('/cat-care/feeding', {
+        method: 'POST',
+        body: JSON.stringify({ cat_names: names }),
+      }, token);
+      setSelectedCats([]);
+      notify('Feeding logged!', 'success');
+      fetch();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Failed', 'error');
+    } finally {
+      setTimeout(() => setFeedingAnim(false), 600);
+    }
+  };
+
+  const undoFeeding = async (logId: string) => {
+    try {
+      await api(`/cat-care/feeding/${logId}`, { method: 'DELETE' }, token);
+      notify('Feeding undone — like it never happened', 'info');
+      fetch();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Cannot undo', 'error');
+    }
   };
 
   const toggleCat = (name: string) => {
@@ -79,85 +114,131 @@ export function CatCarePage() {
     );
   };
 
-  const feedBoth = () => logFeeding(cats.map((c) => c.name));
-
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="font-bold text-lg mb-4">{copy.catCare.litter}</h2>
+      <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <h2 className="font-bold text-xl mb-4 glow-text tracking-widest">{copy.catCare.litter}</h2>
         <div className="space-y-3">
-          {boxes.map((box) => (
-            <div key={box.id} className={`theme-card p-4 ${getUrgencyClass(box.urgency)}`}>
-              <div className="flex justify-between items-start">
+          {boxes.length === 0 ? (
+            <p className="text-sm opacity-50 animate-pulse">Loading litter boxes...</p>
+          ) : boxes.map((box, i) => (
+            <motion.div
+              key={box.id}
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className={`theme-card p-4 card-glow ${getUrgencyClass(box.urgency)}`}
+            >
+              <div className="flex justify-between items-start gap-3">
                 <div>
                   <div className="font-bold">{box.name}</div>
                   <div className="text-xs opacity-60">{box.location}</div>
                   {box.last_cleaning ? (
-                    <div className="text-xs mt-1 opacity-60">
-                      Last: {box.last_cleaning.cleaned_by} — {formatRelativeTime(box.last_cleaning.cleaned_at)}
+                    <div className="text-xs mt-1 opacity-60 flex items-center gap-2 flex-wrap">
+                      <span>Last: {box.last_cleaning.cleaned_by} — {formatRelativeTime(box.last_cleaning.cleaned_at)}</span>
+                      {box.last_cleaning.cleaned_by === user!.username && box.last_cleaning.id && (
+                        <button onClick={() => undoCleaning(box.last_cleaning!.id!)} className="theme-btn text-[10px] px-2 py-0.5 opacity-60">
+                          Undo
+                        </button>
+                      )}
                     </div>
                   ) : (
-                    <div className="text-xs mt-1 text-red-400">Never cleaned!</div>
+                    <div className="text-xs mt-1 text-red-400 animate-pulse">Never cleaned!</div>
                   )}
                 </div>
-                <button onClick={() => cleanBox(box.id)} className="theme-btn text-xs">
+                <motion.button
+                  whileTap={{ scale: 0.9 }}
+                  whileHover={{ scale: 1.05 }}
+                  onClick={() => cleanBox(box.id)}
+                  className="theme-btn theme-btn-primary text-xs"
+                >
                   {copy.catCare.clean}
-                </button>
+                </motion.button>
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
-      </section>
+      </motion.section>
 
-      <section>
-        <h2 className="font-bold text-lg mb-4">{copy.catCare.feeding}</h2>
+      <motion.section initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+        <h2 className="font-bold text-xl mb-4 glow-text tracking-widest">{copy.catCare.feeding}</h2>
 
-        <div className="flex flex-wrap gap-2 mb-4">
-          {cats.map((cat) => (
-            <button
+        <div className="flex flex-wrap gap-3 mb-4">
+          {cats.map((cat, i) => (
+            <motion.button
               key={cat.id}
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{
+                scale: selectedCats.includes(cat.name) ? 1.08 : 1,
+                opacity: 1,
+                y: feedingAnim ? [0, -8, 0] : 0,
+              }}
+              transition={{ delay: i * 0.1 }}
               onClick={() => toggleCat(cat.name)}
-              className={`theme-card px-4 py-3 flex items-center gap-2 transition-all ${
-                selectedCats.includes(cat.name) ? 'scale-105 border-2 border-current' : 'opacity-70'
+              className={`theme-card px-5 py-4 flex items-center gap-3 card-glow transition-all ${
+                selectedCats.includes(cat.name) ? 'border-2 border-current ring-2 ring-current/30' : 'opacity-80'
               }`}
             >
-              <span className="text-xl">{CAT_EMOJI[cat.color] || '🐱'}</span>
+              <motion.span
+                className="text-3xl"
+                animate={{ rotate: selectedCats.includes(cat.name) ? [0, -5, 5, 0] : 0 }}
+                transition={{ repeat: selectedCats.includes(cat.name) ? Infinity : 0, duration: 2 }}
+              >
+                {CAT_EMOJI[cat.color] || '🐱'}
+              </motion.span>
               <div className="text-left">
-                <div className="font-bold text-sm">{cat.name}</div>
-                <div className="text-xs opacity-60 capitalize">{cat.color}</div>
+                <div className="font-bold">{cat.name}</div>
+                <div className="text-xs opacity-60 capitalize">{cat.color} cat</div>
               </div>
-            </button>
+            </motion.button>
           ))}
-          <button onClick={feedBoth} className="theme-btn text-xs px-4">
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => logFeeding(cats.map((c) => c.name))}
+            className="theme-btn text-xs px-4 self-center"
+          >
             Feed Both
-          </button>
+          </motion.button>
         </div>
 
-        <button
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          whileHover={{ scale: 1.02 }}
           onClick={() => logFeeding(selectedCats)}
           disabled={!selectedCats.length}
-          className="theme-btn theme-btn-primary w-full text-sm mb-4"
+          className="theme-btn theme-btn-primary w-full text-sm mb-4 py-3"
         >
           {copy.catCare.feed} {selectedCats.length ? `(${selectedCats.join(', ')})` : ''}
-        </button>
+        </motion.button>
 
         <div className="space-y-2">
           {feedings.slice(0, 10).map((log) => (
-            <div key={log.id} className={`theme-card p-3 text-sm ${getUrgencyClass(log.urgency)}`}>
-              {log.cat_names.map((name) => {
-                const cat = cats.find((c) => c.name === name);
-                return (
-                  <span key={name} className="mr-2">
-                    {cat ? CAT_EMOJI[cat.color] : '🐱'} {name}
-                  </span>
-                );
-              })}
-              <span className="opacity-60 ml-2">by {log.fed_by}</span>
-              <span className="opacity-40 ml-2">{formatRelativeTime(log.fed_at)}</span>
-            </div>
+            <motion.div
+              key={log.id}
+              layout
+              className={`theme-card p-3 text-sm flex items-center justify-between gap-2 ${getUrgencyClass(log.urgency)}`}
+            >
+              <div>
+                {log.cat_names.map((name) => {
+                  const cat = cats.find((c) => c.name === name);
+                  return (
+                    <span key={name} className="mr-2">
+                      {cat ? CAT_EMOJI[cat.color] : '🐱'} {name}
+                    </span>
+                  );
+                })}
+                <span className="opacity-60 ml-2">by {log.fed_by}</span>
+                <span className="opacity-40 ml-2">{formatRelativeTime(log.fed_at)}</span>
+              </div>
+              {log.fed_by === user!.username && (
+                <button onClick={() => undoFeeding(log.id)} className="theme-btn text-[10px] px-2 py-0.5 shrink-0 opacity-60">
+                  Undo
+                </button>
+              )}
+            </motion.div>
           ))}
         </div>
-      </section>
+      </motion.section>
     </div>
   );
 }

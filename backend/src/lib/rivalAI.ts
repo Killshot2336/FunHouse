@@ -168,14 +168,21 @@ export async function processRivalCounterAttack(sb: SupabaseClient) {
   if (!isFridayBattleActive()) return;
 
   const weekStart = getFridayWeekStart();
-  const battle = await ensureWeeklyBattle(sb);
+  const { data: battle } = await sb.from('rival_weekly_battles').select('*').eq('week_start', weekStart).single();
   if (!battle || battle.outcome !== 'active') return;
 
+  const lastCounter = battle.last_counter_at ? new Date(battle.last_counter_at).getTime() : 0;
+  const minInterval = 30 * 60 * 1000;
+  if (Date.now() - lastCounter < minInterval) return;
+
   const rival = RIVAL_ROTATION[battle.rival_theme_index || 0];
-  const damage = 2 + Math.floor(Math.random() * 5);
+  const damage = 2 + Math.floor(Math.random() * 3);
   const newHp = Math.max(0, (battle.household_hp_current || 0) - damage);
 
-  await sb.from('rival_weekly_battles').update({ household_hp_current: newHp }).eq('week_start', weekStart);
+  await sb.from('rival_weekly_battles').update({
+    household_hp_current: newHp,
+    last_counter_at: new Date().toISOString(),
+  }).eq('week_start', weekStart);
 
   const message = rival.counterAttacks[Math.floor(Math.random() * rival.counterAttacks.length)];
   await sb.from('rival_battle_log').insert({
@@ -274,4 +281,39 @@ function getDaysUntilFriday(): number {
   if (day === 6) return 6;
   if (day === 0) return 5;
   return 5 - day;
+}
+
+export async function resetWeeklyBattle(sb: SupabaseClient) {
+  const weekStart = getFridayWeekStart();
+  const household = await getHouseholdPower(sb);
+  const themeIndex = pickRivalTheme(weekStart);
+  const rival = RIVAL_ROTATION[themeIndex];
+  const rivalHp = Math.round(household.totalPower * 1.0);
+  const householdHp = Math.round(household.totalPower * 0.8);
+
+  await sb.from('rival_battle_log').delete().eq('week_start', weekStart);
+
+  await sb.from('rival_weekly_battles').upsert({
+    week_start: weekStart,
+    rival_name: rival.name,
+    rival_commander: rival.commander,
+    rival_theme_index: themeIndex,
+    rival_hp_max: rivalHp,
+    rival_hp_current: rivalHp,
+    household_hp_max: householdHp,
+    household_hp_current: householdHp,
+    power_rating: household.totalPower,
+    power_multiplier: 1.0,
+    outcome: 'active',
+    last_counter_at: null,
+  });
+
+  await sb.from('rival_battle_log').insert({
+    week_start: weekStart,
+    message: `Battle reset — ${rival.commander} re-engages your household!`,
+    actor: 'system',
+    damage: 0,
+  });
+
+  return getRivalBattleState(sb);
 }

@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase } from '../lib/supabase.js';
-import { authMiddleware } from '../middleware/auth.js';
+import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 import {
   getRivalBattleState,
   processRivalCounterAttack,
   dealHouseholdDamage,
   isFridayBattleActive,
+  resetWeeklyBattle,
 } from '../lib/rivalAI.js';
 
 const router = Router();
@@ -46,6 +47,26 @@ router.get('/state', async (_req: Request, res: Response) => {
 
   await processRivalCounterAttack(supabase);
   const state = await getRivalBattleState(supabase);
+  res.json(state);
+});
+
+router.post('/reset', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  if (user.username !== 'aden') {
+    return res.status(403).json({ error: 'Only Aden can reset the faction war' });
+  }
+
+  if (isDemoMode || !supabase) {
+    if (demoBattle.battle) {
+      demoBattle.battle.rival_hp_current = 75;
+      demoBattle.battle.household_hp_current = 80;
+      demoBattle.battle.outcome = 'active';
+      demoBattle.logs = [{ message: 'Battle reset!', actor: 'system', damage: 0 }];
+    }
+    return res.json(demoBattle);
+  }
+
+  const state = await resetWeeklyBattle(supabase);
   res.json(state);
 });
 

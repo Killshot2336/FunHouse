@@ -9,17 +9,24 @@ interface Assignment {
   user_id: string;
   task_id: string;
   completed: boolean;
+  completed_by?: string;
   task?: { name: string; icon: string; description: string };
+  master_tasks?: { name: string; icon: string; description: string };
+}
+
+function getTask(a: Assignment) {
+  return a.task || a.master_tasks;
 }
 
 export function TasksPage() {
   const { user, token } = useAuthStore();
-  const { triggerDamage, setBoss } = useBossStore();
+  const { triggerDamage } = useBossStore();
   const notify = useNotificationStore((s) => s.show);
   const copy = themeCopy[user!.theme];
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [completing, setCompleting] = useState<string | null>(null);
   const [animating, setAnimating] = useState<string | null>(null);
+  const [burst, setBurst] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async () => {
     try {
@@ -35,74 +42,116 @@ export function TasksPage() {
   }, [fetchTasks]);
 
   const myTasks = assignments.filter((a) => a.user_id === user!.username);
-  const allTasks = assignments;
 
   const completeTask = async (id: string) => {
     setCompleting(id);
     setAnimating(id);
+    setBurst(id);
     try {
-      const res = await api<{ boss?: { current_health: number; max_health: number } }>(`/tasks/complete/${id}`, { method: 'POST' }, token);
+      await api(`/tasks/complete/${id}`, { method: 'POST' }, token);
       playSound(user!.theme, 'complete');
       triggerDamage();
-      if (res.boss) setBoss(res.boss.current_health, res.boss.max_health);
       notify(copy.notifications.taskComplete, 'success');
       await fetchTasks();
     } catch (err) {
       notify(err instanceof Error ? err.message : 'Failed', 'error');
     } finally {
       setCompleting(null);
-      setTimeout(() => setAnimating(null), 600);
+      setTimeout(() => { setAnimating(null); setBurst(null); }, 800);
+    }
+  };
+
+  const undoTask = async (id: string) => {
+    try {
+      await api(`/tasks/undo/${id}`, { method: 'POST' }, token);
+      notify('Task undone — like it never happened', 'info');
+      await fetchTasks();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : 'Cannot undo', 'error');
     }
   };
 
   return (
     <div className="space-y-6">
-      <h2 className="font-bold text-lg tracking-wider">{copy.tasks.title}</h2>
+      <motion.h2
+        className="font-bold text-xl tracking-widest glow-text"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        {copy.tasks.title}
+      </motion.h2>
 
       <div className="space-y-3">
-        <h3 className="text-sm uppercase opacity-60">Your Tasks</h3>
+        <h3 className="text-sm uppercase opacity-60 tracking-wider">Your Tasks</h3>
         {myTasks.length === 0 ? (
-          <p className="opacity-50 text-sm">{copy.tasks.empty}</p>
+          <p className="opacity-50 text-sm animate-pulse">{copy.tasks.empty}</p>
         ) : (
-          myTasks.map((task) => (
-            <AnimatePresence key={task.id}>
-              <motion.div
-                layout
-                className={`theme-card p-4 flex items-center gap-4 ${task.completed ? 'opacity-40' : ''} ${animating === task.id ? 'damage-flash' : ''}`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <span className="text-2xl">{task.task?.icon || '📋'}</span>
-                <div className="flex-1">
-                  <div className="font-bold">{task.task?.name}</div>
-                  <div className="text-xs opacity-60">{task.task?.description}</div>
-                </div>
-                {!task.completed && (
-                  <button
-                    onClick={() => completeTask(task.id)}
-                    disabled={completing === task.id}
-                    className="theme-btn theme-btn-primary text-xs"
+          myTasks.map((task, i) => {
+            const t = getTask(task);
+            return (
+              <AnimatePresence key={task.id}>
+                <motion.div
+                  layout
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.08 }}
+                  className={`theme-card p-4 flex items-center gap-4 card-glow ${task.completed ? 'opacity-50' : ''} ${animating === task.id ? 'damage-flash' : ''}`}
+                >
+                  {burst === task.id && <div className="action-burst" />}
+                  <motion.span
+                    className="text-3xl"
+                    animate={animating === task.id ? { scale: [1, 1.4, 1], rotate: [0, 10, -10, 0] } : {}}
                   >
-                    {completing === task.id ? '...' : copy.tasks.complete}
-                  </button>
-                )}
-                {task.completed && <span className="text-green-400 text-sm">✓ DONE</span>}
-              </motion.div>
-            </AnimatePresence>
-          ))
+                    {t?.icon || '📋'}
+                  </motion.span>
+                  <div className="flex-1">
+                    <div className="font-bold tracking-wide">{t?.name || 'Task'}</div>
+                    <div className="text-xs opacity-60">{t?.description}</div>
+                  </div>
+                  {!task.completed ? (
+                    <motion.button
+                      whileTap={{ scale: 0.92 }}
+                      whileHover={{ scale: 1.05 }}
+                      onClick={() => completeTask(task.id)}
+                      disabled={completing === task.id}
+                      className="theme-btn theme-btn-primary text-xs px-4 py-2"
+                    >
+                      {completing === task.id ? '...' : copy.tasks.complete}
+                    </motion.button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-green-400 text-sm font-bold">✓ DONE</span>
+                      {task.completed_by === user!.username && (
+                        <button onClick={() => undoTask(task.id)} className="theme-btn text-xs opacity-60 hover:opacity-100">
+                          Undo
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            );
+          })
         )}
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-sm uppercase opacity-60">Household Progress</h3>
-        {allTasks.map((task) => (
-          <div key={`all-${task.id}`} className={`theme-card p-3 flex items-center gap-3 text-sm ${task.completed ? 'opacity-40' : ''}`}>
-            <span>{task.task?.icon}</span>
-            <span className="flex-1">{task.task?.name}</span>
-            <span className="text-xs capitalize opacity-60">{task.user_id}</span>
-            {task.completed ? '✓' : '○'}
-          </div>
-        ))}
+        <h3 className="text-sm uppercase opacity-60 tracking-wider">Household Progress</h3>
+        {assignments.map((task) => {
+          const t = getTask(task);
+          return (
+            <motion.div
+              key={`all-${task.id}`}
+              layout
+              className={`theme-card p-3 flex items-center gap-3 text-sm ${task.completed ? 'opacity-40 line-through' : ''}`}
+            >
+              <span>{t?.icon}</span>
+              <span className="flex-1">{t?.name}</span>
+              <span className="text-xs capitalize opacity-60">{task.user_id}</span>
+              {task.completed ? '✓' : '○'}
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
