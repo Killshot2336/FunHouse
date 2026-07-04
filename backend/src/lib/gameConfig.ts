@@ -306,6 +306,12 @@ export function canEquipOnCommander(itemId: string): boolean {
   return def?.item_type === 'armor' || def?.item_type === 'weapon' || def?.item_type === 'relic';
 }
 
+export function canEquipOnUnit(itemId: string): boolean {
+  const def = LOOT_TABLE.find((i) => i.id === itemId);
+  if (!def) return false;
+  return def.item_type === 'weapon' || def.item_type === 'armor' || def.item_type === 'relic' || def.item_type === 'shard';
+}
+
 export const SKILL_BRANCHES = ['health', 'damage', 'shield'] as const;
 export type SkillBranch = typeof SKILL_BRANCHES[number];
 

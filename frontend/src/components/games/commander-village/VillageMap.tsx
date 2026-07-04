@@ -147,7 +147,8 @@ export function VillageMap({ state, onUpdate }: VillageMapProps) {
               elapsedSec={selectedAccrued?.elapsedSec || 0}
               upgrading={placing}
               onClose={() => setSelectedTile(null)}
-              onUpgrade={() => placeOrUpgrade(selectedTile.x, selectedTile.y)}
+              onUpdate={onUpdate}
+              onLevelUpgrade={() => placeOrUpgrade(selectedTile.x, selectedTile.y)}
             />
           </div>
         )}

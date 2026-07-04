@@ -135,8 +135,12 @@ export function CommanderVillage() {
         story={state.story}
         patron={state.commander.patron}
         onComplete={async () => {
-          await api('/game/story-seen', { method: 'POST' }, token);
-          refresh();
+          try {
+            await api('/game/story-seen', { method: 'POST' }, token);
+            refresh();
+          } catch {
+            /* stay on intro if save fails */
+          }
         }}
       />
     );

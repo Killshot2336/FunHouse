@@ -27,9 +27,25 @@ export function getCommanderResource(cmd: CommanderResources, key: ResourceKey):
   return cmd[key] ?? 0;
 }
 
+export const HOUSE_USERS = ['aden', 'edward', 'jamie'] as const;
+
+export function sanitizeTradeBundle(bundle: TradeResources): TradeResources {
+  const out: TradeResources = {};
+  for (const key of Object.keys(RESOURCE_META) as ResourceKey[]) {
+    const v = bundle[key] ?? 0;
+    if (v < 0) throw new Error('Resource amounts must be positive');
+    if (v > 0) out[key] = Math.floor(v);
+  }
+  if (bundle.item_ids?.length) {
+    out.item_ids = [...new Set(bundle.item_ids)];
+  }
+  return out;
+}
+
 export function hasEnoughResources(cmd: CommanderResources, bundle: TradeResources): boolean {
   for (const key of Object.keys(RESOURCE_META) as ResourceKey[]) {
     const need = bundle[key] || 0;
+    if (need < 0) return false;
     if (need > 0 && getCommanderResource(cmd, key) < need) return false;
   }
   return true;

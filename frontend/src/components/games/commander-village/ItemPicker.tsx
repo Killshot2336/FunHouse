@@ -69,15 +69,25 @@ export function ItemPicker({ label, inventory, selectedIds, onChange }: ItemPick
   );
 }
 
-export function ItemChips({ itemIds, inventory }: { itemIds?: string[]; inventory: GameState['inventory'] }) {
+export function ItemChips({
+  itemIds,
+  itemLabels,
+  inventory,
+}: {
+  itemIds?: string[];
+  itemLabels?: Array<{ id: string; name: string; rarity?: string }>;
+  inventory: GameState['inventory'];
+}) {
   if (!itemIds?.length) return null;
   return (
     <div className="flex gap-1 flex-wrap">
       {itemIds.map((id) => {
+        const label = itemLabels?.find((l) => l.id === id);
         const item = inventory.find((i) => i.id === id);
+        const name = label?.name || item?.name || 'item';
         return (
           <span key={id} className="theme-card px-2 py-0.5 text-xs">
-            🎁 {item?.name || 'item'}
+            🎁 {name}
           </span>
         );
       })}

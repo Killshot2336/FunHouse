@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAuthStore, useNotificationStore } from '../../../stores';
 import { api, getRarityClass, playSound } from '../../../lib/api';
 import { useCinematicStore } from '../../../stores/cinematic';
-import { RARITY_COLORS, itemSellPrice, getEquipSlotForItem, canEquipOnCommander } from './gameConfig';
+import { RARITY_COLORS, itemSellPrice, getEquipSlotForItem, canEquipOnCommander, canEquipOnUnit } from './gameConfig';
 import { ItemInfoModal } from './ItemInfoModal';
 import { GameModal } from './GameModal';
 import type { GameState } from './CommanderVillage';
@@ -141,6 +141,7 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
           const equippedName = equippedUnit ? unitName(equippedUnit.unit_key) : null;
           const isBlueprint = item.item_id === 'blueprint';
           const commanderGear = canEquipOnCommander(item.item_id, items);
+          const troopGear = canEquipOnUnit(item.item_id, items);
 
           return (
             <div
@@ -176,7 +177,7 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
                     Redeem
                   </button>
                 )}
-                {!item.equipped_to_unit && !item.equipped_to_commander && (state.units.length > 0 || commanderGear) && !isBlueprint && (
+                {!item.equipped_to_unit && !item.equipped_to_commander && (state.units.length > 0 || commanderGear) && !isBlueprint && (troopGear || commanderGear) && (
                   <button
                     onClick={() => setEquipTarget({
                       itemId: item.id, itemName: item.name, itemType: def?.item_type || 'weapon',
@@ -214,7 +215,10 @@ export function InventoryGrid({ state, onUpdate }: InventoryGridProps) {
               ⭐ Equip on Commander
             </button>
           )}
-          {state.units.length > 0 && (
+          {state.units.length > 0 && canEquipOnUnit(
+            state.inventory.find((i) => i.id === equipTarget.itemId)?.item_id || '',
+            items
+          ) && (
             <>
               <p className="text-xs opacity-50">Or equip on a troop:</p>
               <div className="space-y-2">

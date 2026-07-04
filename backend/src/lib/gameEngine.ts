@@ -196,7 +196,7 @@ export function calcOfflineResources(
     const bld = b.building_key;
     if (bld === 'market' || bld === 'barracks' || bld === 'library' || bld === 'warehouse' || bld === 'tavern') gold += rate;
     else if (bld === 'mine' || bld === 'smithy' || bld === 'workshop') materials += rate;
-    else if (bld === 'farm') food += rate;
+    // Farms accrue crops via stockpile — not direct food
     else if (bld === 'hq' || bld === 'shrine') faction += rate;
   }
   return {
@@ -302,6 +302,15 @@ export function rollPackUnit(patron: Patron, pity: PityState, userId?: string): 
 }
 
 export { calcPowerRating, normalizeCombatStats };
+
+export function removeItemStatsFromUnit(
+  unitStats: Record<string, unknown>,
+  itemStats: Record<string, number>
+): Record<string, unknown> {
+  const neg: Record<string, number> = {};
+  for (const [k, v] of Object.entries(itemStats)) neg[k] = -v;
+  return applyItemStatsToUnit(unitStats, neg);
+}
 
 export function applyItemStatsToUnit(
   unitStats: Record<string, unknown>,

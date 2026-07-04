@@ -27,6 +27,7 @@ import {
   getPickaxeTier,
   getEquipSlotForItem,
   canEquipOnCommander,
+  canEquipOnUnit,
   BLUEPRINT_BUILDINGS,
   BLUEPRINT_DISCOUNT,
   type Patron,
@@ -44,6 +45,7 @@ import {
   rollPackLoot,
   defaultUnitStats,
   applyItemStatsToUnit,
+  removeItemStatsFromUnit,
   formatItemStatBonus,
   applyHiddenDuelLuck,
 } from '../lib/gameEngine.js';
@@ -72,6 +74,8 @@ import {
   deductResources,
   tradeDescription,
   hasTradeContent,
+  sanitizeTradeBundle,
+  HOUSE_USERS,
 } from '../lib/tradeResources.js';
 
 const router = Router();
@@ -440,9 +444,18 @@ router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
     const item = store.gameInventory.find((i) => i.id === itemId && i.user_id === user.username);
     const unit = store.gameUnits.find((u) => u.id === unit_id && u.user_id === user.username);
     if (!item || !unit) return res.status(404).json({ error: 'Not found' });
-    if (item.equipped_to_unit) return res.status(400).json({ error: 'Already equipped' });
+    if (item.equipped_to_unit || item.equipped_to_commander) return res.status(400).json({ error: 'Already equipped' });
+    if (!canEquipOnUnit(item.item_id)) return res.status(400).json({ error: 'Item cannot be equipped on troops' });
 
     const slot = reqSlot || getEquipSlotForItem(item.item_id);
+    const prevId = unit.equipment[slot];
+    if (prevId && prevId !== item.id) {
+      const prevItem = store.gameInventory.find((i) => i.id === prevId);
+      if (prevItem) {
+        unit.stats = removeItemStatsFromUnit(unit.stats as Record<string, unknown>, prevItem.stats);
+        prevItem.equipped_to_unit = null;
+      }
+    }
     item.equipped_to_unit = unit_id;
     unit.equipment[slot] = item.id;
     unit.stats = applyItemStatsToUnit(unit.stats as Record<string, unknown>, item.stats);
@@ -591,6 +604,32 @@ router.post('/collect', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/housemate/:username/inventory', async (req: Request, res: Response) => {
+  const target = String(req.params.username);
+  if (!HOUSE_USERS.includes(target as typeof HOUSE_USERS[number])) {
+    return res.status(400).json({ error: 'Invalid housemate' });
+  }
+
+  if (isDemoMode || !supabase) {
+    const store = getDemoStore();
+    const items = store.gameInventory.filter(
+      (i) => i.user_id === target && !i.equipped_to_unit && !i.equipped_to_commander
+    );
+    return res.json(items);
+  }
+
+  try {
+    const { data } = await supabase
+      .from('game_inventory')
+      .select('id, item_id, name, rarity, stats_json, equipped_to_unit, equipped_to_commander')
+      .eq('user_id', target);
+    const items = (data || []).filter((i) => !i.equipped_to_unit && !i.equipped_to_commander);
+    res.json(items);
+  } catch (err) {
+    handleGameError(res, err);
+  }
+});
+
 router.get('/trades', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   if (isDemoMode || !supabase) {
@@ -608,11 +647,20 @@ router.get('/trades', async (req: Request, res: Response) => {
 router.post('/trades', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const { to_user, offer, request } = req.body;
+  if (to_user === user.username) return res.status(400).json({ error: 'Cannot trade with yourself' });
+
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
     const fromCmd = getOrCreateCommander(store, user.username);
-    const offerBundle = offer as TradeResources;
-    const requestBundle = request as TradeResources;
+    let offerBundle: TradeResources;
+    let requestBundle: TradeResources;
+    try {
+      offerBundle = sanitizeTradeBundle(offer || {});
+      requestBundle = sanitizeTradeBundle(request || {});
+    } catch (e) {
+      return res.status(400).json({ error: e instanceof Error ? e.message : 'Invalid trade' });
+    }
+    if (!HOUSE_USERS.includes(to_user)) return res.status(400).json({ error: 'Invalid trade partner' });
     if (!hasTradeContent(offerBundle) && !hasTradeContent(requestBundle)) {
       return res.status(400).json({ error: 'Trade must include something to offer or request' });
     }
@@ -638,8 +686,12 @@ router.post('/trades', async (req: Request, res: Response) => {
     return res.json(trade);
   }
 
-  const trade = await gameDb.createTrade(supabase, user.username, to_user, offer, request);
-  res.json(trade);
+  try {
+    const trade = await gameDb.createTrade(supabase, user.username, to_user, offer, request);
+    res.json(trade);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
 router.post('/trades/:id/accept', async (req: Request, res: Response) => {
@@ -1280,6 +1332,7 @@ router.post('/dungeon/claim', async (req: Request, res: Response) => {
 
   try {
     const result = await gameDb.claimDungeonRoom(supabase, user.username);
+    await awardXpLive(user.username, 'patrol');
     res.json(result);
   } catch (err) { handleGameError(res, err); }
 });

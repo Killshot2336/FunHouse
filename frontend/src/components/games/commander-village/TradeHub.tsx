@@ -6,22 +6,24 @@ import { ResourcePicker, ResourceChips, type ResourceBundle } from './ResourcePi
 import { ItemPicker, ItemChips } from './ItemPicker';
 import type { GameState } from './CommanderVillage';
 
+interface TradeItemLabel { id: string; name: string; rarity?: string }
+
 interface Trade {
   id: string;
   from_user: string;
   to_user: string;
-  offer_json: ResourceBundle & { description?: string; item_ids?: string[] };
-  request_json: ResourceBundle & { description?: string; item_ids?: string[] };
+  offer_json: ResourceBundle & { description?: string; item_ids?: string[]; item_labels?: TradeItemLabel[] };
+  request_json: ResourceBundle & { description?: string; item_ids?: string[]; item_labels?: TradeItemLabel[] };
   status: string;
 }
+
+type TradeBundle = ResourceBundle & { item_ids?: string[]; item_labels?: TradeItemLabel[] };
 
 function bundleHasContent(bundle: ResourceBundle & { item_ids?: string[] }): boolean {
   const hasResources = Object.values(bundle).some((v) => typeof v === 'number' && v > 0);
   const hasItems = (bundle.item_ids?.length || 0) > 0;
   return hasResources || hasItems;
 }
-
-type TradeBundle = ResourceBundle & { item_ids?: string[] };
 
 export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () => void }) {
   const { user, token } = useAuthStore();
@@ -31,6 +33,7 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
   const [request, setRequest] = useState<TradeBundle>({});
   const [offerItems, setOfferItems] = useState<string[]>([]);
   const [requestItems, setRequestItems] = useState<string[]>([]);
+  const [partnerInventory, setPartnerInventory] = useState<GameState['inventory']>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,14 +44,29 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
 
   useEffect(() => { fetch(); }, [token]);
 
+  useEffect(() => {
+    api<GameState['inventory']>(`/game/housemate/${toUser}/inventory`, {}, token)
+      .then(setPartnerInventory)
+      .catch(() => setPartnerInventory([]));
+    setRequestItems([]);
+  }, [toUser, token]);
+
+  const itemLabels = (ids: string[], source: GameState['inventory']) =>
+    ids.map((id) => {
+      const item = source.find((i) => i.id === id);
+      return item ? { id, name: item.name, rarity: item.rarity } : { id, name: 'item' };
+    });
+
   const offerBundle = (): TradeBundle => ({
     ...offer,
     item_ids: offerItems.length ? offerItems : undefined,
+    item_labels: offerItems.length ? itemLabels(offerItems, state.inventory) : undefined,
   });
 
   const requestBundle = (): TradeBundle => ({
     ...request,
     item_ids: requestItems.length ? requestItems : undefined,
+    item_labels: requestItems.length ? itemLabels(requestItems, partnerInventory) : undefined,
   });
 
   const createTrade = async () => {
@@ -111,7 +129,7 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
         <ItemPicker label="You give (equipment)" inventory={state.inventory} selectedIds={offerItems} onChange={setOfferItems} />
 
         <ResourcePicker label="You want (resources, optional)" value={request} onChange={setRequest} />
-        <ItemPicker label="You want (equipment, optional)" inventory={state.inventory} selectedIds={requestItems} onChange={setRequestItems} />
+        <ItemPicker label="You want (equipment, optional)" inventory={partnerInventory} selectedIds={requestItems} onChange={setRequestItems} />
 
         {error && <p className="text-xs text-red-400">{error}</p>}
 
@@ -144,12 +162,12 @@ export function TradeHub({ state, onUpdate }: { state: GameState; onUpdate: () =
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="opacity-50">Gives:</span>
                   <ResourceChips bundle={t.offer_json} />
-                  <ItemChips itemIds={t.offer_json.item_ids} inventory={state.inventory} />
+                  <ItemChips itemIds={t.offer_json.item_ids} itemLabels={t.offer_json.item_labels} inventory={state.inventory} />
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="opacity-50">Wants:</span>
                   <ResourceChips bundle={t.request_json} />
-                  <ItemChips itemIds={t.request_json.item_ids} inventory={state.inventory} />
+                  <ItemChips itemIds={t.request_json.item_ids} itemLabels={t.request_json.item_labels} inventory={partnerInventory} />
                 </div>
               </div>
               {t.to_user === user!.username && t.status === 'pending' && (

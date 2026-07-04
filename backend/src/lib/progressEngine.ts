@@ -52,8 +52,10 @@ export function rollDuelStakes(holdings: { gold: number; materials: number; food
   const shuffled = [...keys].sort(() => Math.random() - 0.5).slice(0, count);
   const stake: Record<string, number> = {};
   for (const k of shuffled) {
+    const available = holdings[k] || 0;
+    if (available <= 0) continue;
     const pct = 0.02 + Math.random() * 0.06;
-    stake[k] = Math.max(1, Math.floor(holdings[k] * pct));
+    stake[k] = Math.max(1, Math.min(available, Math.floor(available * pct)));
   }
   return stake;
 }

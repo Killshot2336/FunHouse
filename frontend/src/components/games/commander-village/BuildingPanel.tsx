@@ -24,13 +24,14 @@ interface BuildingPanelProps {
   liveAmount: number;
   ratePerMin: number;
   elapsedSec: number;
-  onUpgrade: () => void;
+  onUpdate: () => void;
+  onLevelUpgrade: () => void;
   onClose: () => void;
   upgrading: boolean;
 }
 
 export function BuildingPanel({
-  state, x, y, liveAmount, ratePerMin, elapsedSec, onUpgrade, onClose, upgrading,
+  state, x, y, liveAmount, ratePerMin, elapsedSec, onUpdate, onLevelUpgrade, onClose, upgrading,
 }: BuildingPanelProps) {
   const { token } = useAuthStore();
   const [collecting, setCollecting] = useState(false);
@@ -65,11 +66,13 @@ export function BuildingPanel({
   const unlockedCrops = getUnlockedCrops(meta.upgrades || {});
 
   const setCrop = async (crop: string) => {
-    await api(`/game/buildings/${building.id}/crop`, {
-      method: 'POST',
-      body: JSON.stringify({ crop }),
-    }, token);
-    onUpgrade();
+    try {
+      await api(`/game/buildings/${building.id}/crop`, {
+        method: 'POST',
+        body: JSON.stringify({ crop }),
+      }, token);
+      onUpdate();
+    } catch { /* ignore */ }
   };
 
   const collectMine = async () => {
@@ -79,7 +82,7 @@ export function BuildingPanel({
         method: 'POST',
         body: JSON.stringify({ building_id: building.id }),
       }, token);
-      onUpgrade();
+      onUpdate();
     } catch { /* ignore */ }
     setCollecting(false);
   };
@@ -149,14 +152,14 @@ export function BuildingPanel({
       </div>
 
       <button
-        onClick={onUpgrade}
+        onClick={onLevelUpgrade}
         disabled={upgrading || !canAfford}
         className={`theme-btn w-full text-sm py-2 ${!canAfford ? 'opacity-40' : ''}`}
       >
         {upgrading ? 'Upgrading...' : canAfford ? `Upgrade Level (${upgradeCost}🪙)` : 'Not enough gold'}
       </button>
 
-      <BuildingUpgrades state={state} building={building} onUpdate={onUpgrade} />
+      <BuildingUpgrades state={state} building={building} onUpdate={onUpdate} />
     </motion.div>
   );
 }

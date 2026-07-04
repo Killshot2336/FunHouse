@@ -178,6 +178,12 @@ export function canEquipOnCommander(itemId: string, items: LootItemDef[]): boole
   return def?.item_type === 'armor' || def?.item_type === 'weapon' || def?.item_type === 'relic';
 }
 
+export function canEquipOnUnit(itemId: string, items: LootItemDef[]): boolean {
+  const def = items.find((i) => i.id === itemId);
+  if (!def) return false;
+  return def.item_type === 'weapon' || def.item_type === 'armor' || def.item_type === 'relic' || def.item_type === 'shard';
+}
+
 export function itemSellPrice(itemId: string, rarity: string, items?: LootItemDef[]): number {
   const def = items?.find((i) => i.id === itemId);
   if (def) return def.sellValue;

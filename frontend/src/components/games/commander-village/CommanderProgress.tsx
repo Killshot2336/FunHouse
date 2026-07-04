@@ -142,7 +142,7 @@ export function CommanderProgress({ state, onUpdate }: { state: GameState; onUpd
         skills={skills}
         spent={spent}
         spUnspent={progress.sp_unspent}
-        onSpend={fetch}
+        onSpend={() => { fetch(); onUpdate?.(); }}
       />
     </div>
   );

@@ -25,6 +25,7 @@ import {
   BLUEPRINT_DISCOUNT,
   getEquipSlotForItem,
   canEquipOnCommander,
+  canEquipOnUnit,
   type Patron,
   type PackType,
   type SkillBranch,
@@ -40,6 +41,7 @@ import {
   rollPackLoot,
   defaultUnitStats,
   applyItemStatsToUnit,
+  removeItemStatsFromUnit,
   formatItemStatBonus,
   applyHiddenDuelLuck,
   type BuildingState,
@@ -60,6 +62,7 @@ import {
   type Stockpile,
 } from './economyEngine.js';
 import { unitCombatPower, rollDuelStakes, applyZoneYield, deductCommanderResources, addCommanderResources } from './progressEngine.js';
+import { awardXp } from '../routes/progress.js';
 import {
   type TradeResources,
   type CommanderResources,
@@ -68,6 +71,8 @@ import {
   deductResources,
   tradeDescription,
   hasTradeContent,
+  sanitizeTradeBundle,
+  HOUSE_USERS,
 } from './tradeResources.js';
 
 export interface Commander {
@@ -185,6 +190,29 @@ function resolveBuildCost(
     return { cost: Math.max(0, Math.floor(baseCost * (1 - discount))), perks };
   }
   return { cost: baseCost, perks };
+}
+
+async function nextSlotIndex(sb: SupabaseClient, userId: string): Promise<number> {
+  const { data: units } = await sb.from('game_army_units').select('slot_index').eq('user_id', userId);
+  if (!units?.length) return 0;
+  const used = new Set(units.map((u) => u.slot_index as number));
+  for (let i = 0; i < 6; i++) {
+    if (!used.has(i)) return i;
+  }
+  throw new Error('Army full (max 6)');
+}
+
+async function deleteArmyUnits(sb: SupabaseClient, unitIds: string[]) {
+  if (!unitIds.length) return;
+  await sb.from('game_inventory').update({ equipped_to_unit: null }).in('equipped_to_unit', unitIds);
+  const { data: deps } = await sb.from('game_zone_deployments').select('id, unit_ids');
+  for (const d of deps || []) {
+    const ids = (d.unit_ids as string[]) || [];
+    if (ids.some((id) => unitIds.includes(id))) {
+      await sb.from('game_zone_deployments').delete().eq('id', d.id);
+    }
+  }
+  await sb.from('game_army_units').delete().in('id', unitIds);
 }
 
 async function validateTradeItems(sb: SupabaseClient, userId: string, itemIds?: string[]) {
@@ -343,7 +371,7 @@ export async function updateMissionProgress(
     const progress = Math.max(mission.progress, value);
     const updates: Record<string, unknown> = { progress };
 
-    if (progress >= m.target) {
+    if (progress >= m.target && mission.status !== 'completed') {
       updates.status = 'completed';
       updates.completed_at = new Date().toISOString();
       if (m.reward) {
@@ -353,6 +381,9 @@ export async function updateMissionProgress(
           materials: cmd.materials + (m.reward.materials || 0),
         }).eq('user_id', userId);
       }
+      try {
+        await awardXp(sb, userId, 'mission');
+      } catch { /* non-fatal */ }
     }
 
     await sb.from('game_missions').update(updates).eq('user_id', userId).eq('mission_key', m.key);
@@ -405,7 +436,7 @@ export async function placeBuilding(
   const baseCost = buildingCost(building_key, 0);
   const { cost, perks } = resolveBuildCost(cmd, building_key, baseCost);
   if (cmd.gold < cost) throw new Error('Not enough gold');
-  if (grid_x >= cmd.grid_size || grid_y >= cmd.grid_size) throw new Error('Out of bounds');
+  if (grid_x < 0 || grid_y < 0 || grid_x >= cmd.grid_size || grid_y >= cmd.grid_size) throw new Error('Out of bounds');
   if (!isValidBuildingKey(building_key)) throw new Error('Invalid building type');
 
   await sb.from('game_commanders').update({ gold: cmd.gold - cost, build_perks_json: perks }).eq('user_id', userId);
@@ -451,12 +482,13 @@ export async function recruitUnit(sb: SupabaseClient, userId: string, unit_key: 
 
   await sb.from('game_commanders').update({ gold: cmd.gold - unitDef.baseCost }).eq('user_id', userId);
 
+  const slot = await nextSlotIndex(sb, userId);
   const { data: unit } = await sb
     .from('game_army_units')
     .insert({
       user_id: userId,
       unit_key,
-      slot_index: count || 0,
+      slot_index: slot,
       stats_json: defaultUnitStats(),
       cosmetics_json: { armor: 'default', aura: 'none', weapon: 'basic', banner: 'standard' },
       equipment_json: { weapon: null, armor: null, aura: null, relic: null },
@@ -630,10 +662,24 @@ export async function equipItem(
 
   if (!itemRow || !unitRow) throw new Error('Not found');
   if (itemRow.equipped_to_unit || itemRow.equipped_to_commander) throw new Error('Already equipped');
+  if (!canEquipOnUnit(itemRow.item_id)) throw new Error('Item cannot be equipped on troops');
 
   const equipSlot = slot || getEquipSlotForItem(itemRow.item_id);
+  if (slot && slot !== getEquipSlotForItem(itemRow.item_id)) {
+    throw new Error('Invalid equipment slot for item type');
+  }
+
   const unit = mapUnit(unitRow);
   const item = mapInventory(itemRow);
+
+  const prevItemId = unit.equipment[equipSlot];
+  if (prevItemId && prevItemId !== itemId) {
+    const { data: prevRow } = await sb.from('game_inventory').select('*').eq('id', prevItemId).single();
+    if (prevRow) {
+      unit.stats = removeItemStatsFromUnit(unit.stats as Record<string, unknown>, (prevRow.stats_json || {}) as Record<string, number>) as Unit['stats'];
+      await sb.from('game_inventory').update({ equipped_to_unit: null }).eq('id', prevItemId);
+    }
+  }
 
   unit.stats = applyItemStatsToUnit(unit.stats as Record<string, unknown>, item.stats) as Unit['stats'];
   unit.equipment[equipSlot] = itemId;
@@ -721,11 +767,19 @@ export async function redeemBlueprint(sb: SupabaseClient, userId: string, itemId
 export async function sellItem(sb: SupabaseClient, userId: string, itemId: string) {
   const { data: itemRow } = await sb.from('game_inventory').select('*').eq('id', itemId).eq('user_id', userId).single();
   if (!itemRow) throw new Error('Not found');
-  if (itemRow.equipped_to_unit) throw new Error('Unequip first');
+  if (itemRow.equipped_to_unit) throw new Error('Unequip from troop first');
 
   const price = itemSellPrice(itemRow.item_id, itemRow.rarity);
-
   const cmd = await getOrCreateCommander(sb, userId);
+
+  if (itemRow.equipped_to_commander) {
+    const equipment = parseCommanderEquipment(cmd.commander_equipment_json);
+    for (const [slot, id] of Object.entries(equipment)) {
+      if (id === itemId) equipment[slot] = null;
+    }
+    await sb.from('game_commanders').update({ commander_equipment_json: equipment }).eq('user_id', userId);
+  }
+
   await sb.from('game_commanders').update({
     gold: cmd.gold + price,
   }).eq('user_id', userId);
@@ -753,23 +807,32 @@ export async function createTrade(
   offer: TradeResources,
   request: TradeResources
 ) {
-  if (!hasTradeContent(offer) && !hasTradeContent(request)) {
+  if (fromUser === to_user) throw new Error('Cannot trade with yourself');
+  if (!HOUSE_USERS.includes(to_user as typeof HOUSE_USERS[number])) throw new Error('Invalid trade partner');
+
+  const cleanOffer = sanitizeTradeBundle(offer);
+  const cleanRequest = sanitizeTradeBundle(request);
+
+  if (!hasTradeContent(cleanOffer) && !hasTradeContent(cleanRequest)) {
     throw new Error('Trade must include something to offer or request');
   }
 
   const fromCmd = await getOrCreateCommander(sb, fromUser);
-  if (hasTradeContent(offer) && !hasEnoughResources(fromCmd, offer)) {
+  if (hasTradeContent(cleanOffer) && !hasEnoughResources(fromCmd, cleanOffer)) {
     throw new Error('Not enough resources to offer');
   }
-  await validateTradeItems(sb, fromUser, offer.item_ids);
+  await validateTradeItems(sb, fromUser, cleanOffer.item_ids);
+  if (hasTradeContent(cleanRequest)) {
+    await validateTradeItems(sb, to_user, cleanRequest.item_ids);
+  }
 
   const { data: trade } = await sb
     .from('game_trades')
     .insert({
       from_user: fromUser,
       to_user,
-      offer_json: { ...offer, description: tradeDescription(offer) },
-      request_json: { ...request, description: tradeDescription(request) },
+      offer_json: { ...cleanOffer, description: tradeDescription(cleanOffer) },
+      request_json: { ...cleanRequest, description: tradeDescription(cleanRequest) },
     })
     .select()
     .single();
@@ -848,7 +911,32 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
   const { data: pityRow } = await sb.from('game_drop_pity').select('*').eq('user_id', userId).single();
   const pity = pityRow || { rolls_since_rare: 0, rolls_since_legendary: 0 };
 
-  const pullTroop = category === 'troop' || (category === 'mixed' && Math.random() < 0.35);
+  const { count: armyCount } = await sb
+    .from('game_army_units')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId);
+
+  let pullTroop = category === 'troop' || (category === 'mixed' && Math.random() < 0.35);
+  if (pullTroop && (armyCount || 0) >= 6) {
+    if (category === 'troop') {
+      await sb.from('game_commanders').update({
+        gold: cmd.gold,
+        materials: cmd.materials,
+        food: cmd.food,
+        faction_currency: cmd.faction_currency,
+      }).eq('user_id', userId);
+      const { data: refreshed } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
+      return {
+        result_type: 'troop' as const,
+        full: true,
+        refund: 0,
+        roll: { name: 'Army Full', rarity: 'common' as const, stats: {} },
+        commander: refreshed,
+        pity,
+      };
+    }
+    pullTroop = false;
+  }
 
   if (!pullTroop) {
     const itemTypes = category === 'weapon' ? 'weapon' : category === 'armor' ? 'armor' : ['weapon', 'armor', 'relic'];
@@ -887,17 +975,7 @@ export async function openPack(sb: SupabaseClient, userId: string, packType: Pac
     rolls_since_legendary: rolled.newPity.rolls_since_legendary,
   });
 
-  const { data: units } = await sb.from('game_army_units').select('id').eq('user_id', userId);
-  const { data: commanderAfterCost } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
-
-  if ((units?.length || 0) >= 6) {
-    const refund = 50;
-    await sb.from('game_commanders').update({ gold: (commanderAfterCost?.gold || 0) + refund }).eq('user_id', userId);
-    const { data: refreshed } = await sb.from('game_commanders').select('*').eq('user_id', userId).single();
-    return { result_type: 'troop' as const, full: true, refund, roll: rolled, commander: refreshed, pity: rolled.newPity };
-  }
-
-  const slot = units?.length || 0;
+  const slot = await nextSlotIndex(sb, userId);
   const { data: unit } = await sb.from('game_army_units').insert({
     user_id: userId,
     unit_key: rolled.unitKey,
@@ -985,6 +1063,13 @@ export async function getZones(sb: SupabaseClient, userId: string) {
 export async function deployToZone(sb: SupabaseClient, userId: string, zoneId: string, unitIds: string[]) {
   const { data: units } = await sb.from('game_army_units').select('*').eq('user_id', userId).in('id', unitIds);
   if (!units || units.length !== unitIds.length) throw new Error('Invalid units');
+
+  const { data: existingDeps } = await sb.from('game_zone_deployments').select('*').eq('user_id', userId);
+  for (const d of existingDeps || []) {
+    const overlap = ((d.unit_ids as string[]) || []).filter((id) => unitIds.includes(id));
+    if (overlap.length) throw new Error('Unit already deployed elsewhere');
+  }
+
   const power = units.reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
   await sb.from('game_zone_deployments').delete().eq('zone_id', zoneId).eq('user_id', userId);
   await sb.from('game_zone_deployments').insert({ zone_id: zoneId, user_id: userId, unit_ids: unitIds, deployed_power: power });
@@ -995,7 +1080,8 @@ export async function attackZone(sb: SupabaseClient, userId: string, zoneId: str
   const { data: zone } = await sb.from('game_zones').select('*').eq('id', zoneId).single();
   if (!zone) throw new Error('Zone not found');
   const { data: atkUnits } = await sb.from('game_army_units').select('*').eq('user_id', userId).in('id', unitIds);
-  const atkPower = (atkUnits || []).reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
+  if (!atkUnits || atkUnits.length !== unitIds.length) throw new Error('Invalid units');
+  const atkPower = atkUnits.reduce((s, u) => s + unitCombatPower((u.stats_json || {}) as Record<string, unknown>), 0);
   const { data: defDeps } = await sb.from('game_zone_deployments').select('*').eq('zone_id', zoneId).neq('user_id', userId);
   const defPower = (defDeps || []).reduce((s, d) => s + d.deployed_power, 0);
   const variance = 0.95 + Math.random() * 0.1;
@@ -1003,10 +1089,12 @@ export async function attackZone(sb: SupabaseClient, userId: string, zoneId: str
   const cmd = await getOrCreateCommander(sb, userId);
 
   if (won) {
+    const defenderUnitIds: string[] = [];
     for (const d of defDeps || []) {
-      for (const uid of d.unit_ids as string[]) {
-        await sb.from('game_army_units').delete().eq('id', uid);
-      }
+      defenderUnitIds.push(...((d.unit_ids as string[]) || []));
+    }
+    await deleteArmyUnits(sb, defenderUnitIds);
+    for (const d of defDeps || []) {
       await sb.from('game_zone_deployments').delete().eq('id', d.id);
     }
     const yieldJson = zone.yield_json as Record<string, number>;
@@ -1018,7 +1106,7 @@ export async function attackZone(sb: SupabaseClient, userId: string, zoneId: str
     return { won: true, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), zone: { ...zone, owner_user_id: userId } };
   }
 
-  for (const uid of unitIds) await sb.from('game_army_units').delete().eq('id', uid);
+  await deleteArmyUnits(sb, unitIds);
   return { won: false, atkPower: Math.floor(atkPower), defPower: Math.floor(defPower), troops_lost: unitIds.length };
 }
 
@@ -1039,6 +1127,10 @@ export async function acceptDuel(sb: SupabaseClient, userId: string, duelId: str
   const defender = await getOrCreateCommander(sb, duel.defender_id);
   const chStake = rollDuelStakes(challenger);
   const defStake = rollDuelStakes(defender);
+
+  const chTotal = (chStake.gold || 0) + (chStake.materials || 0) + (chStake.food || 0) + (chStake.faction_currency || 0);
+  const defTotal = (defStake.gold || 0) + (defStake.materials || 0) + (defStake.food || 0) + (defStake.faction_currency || 0);
+  if (chTotal === 0 || defTotal === 0) throw new Error('Not enough resources to duel');
 
   const chAfter = {
     gold: challenger.gold - (chStake.gold || 0),
@@ -1263,7 +1355,11 @@ export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
   if (pityRow) pity = pityRow;
 
   const { item, newPity } = rollLoot(pity, userId);
-  await sb.from('game_drop_pity').update(newPity).eq('user_id', userId);
+  await sb.from('game_drop_pity').upsert({
+    user_id: userId,
+    rolls_since_rare: newPity.rolls_since_rare,
+    rolls_since_legendary: newPity.rolls_since_legendary,
+  });
 
   const { data: invItem } = await sb.from('game_inventory').insert({
     user_id: userId,
@@ -1288,8 +1384,6 @@ export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
   const { data: updatedRun } = await sb.from('game_dungeon_runs').select('*').eq('id', run.id).single();
   return { run: updatedRun, loot: invItem, completed };
 }
-
-const HOUSE_USERS = ['aden', 'edward', 'jamie'];
 
 export async function wipeAllGameData(sb: SupabaseClient, fullHousehold = false) {
   for (const userId of HOUSE_USERS) {
