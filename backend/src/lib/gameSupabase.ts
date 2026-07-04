@@ -1288,3 +1288,39 @@ export async function claimDungeonRoom(sb: SupabaseClient, userId: string) {
   const { data: updatedRun } = await sb.from('game_dungeon_runs').select('*').eq('id', run.id).single();
   return { run: updatedRun, loot: invItem, completed };
 }
+
+const HOUSE_USERS = ['aden', 'edward', 'jamie'];
+
+export async function wipeAllGameData(sb: SupabaseClient, fullHousehold = false) {
+  for (const userId of HOUSE_USERS) {
+    await sb.from('game_inventory').delete().eq('user_id', userId);
+    await sb.from('game_army_units').delete().eq('user_id', userId);
+    await sb.from('game_village_buildings').delete().eq('user_id', userId);
+    await sb.from('game_missions').delete().eq('user_id', userId);
+    await sb.from('game_patrols').delete().eq('user_id', userId);
+    await sb.from('game_drop_pity').delete().eq('user_id', userId);
+    await sb.from('game_dungeon_runs').delete().eq('user_id', userId);
+    await sb.from('game_zone_deployments').delete().eq('user_id', userId);
+    await sb.from('profile_progress').delete().eq('user_id', userId);
+    await sb.from('game_commanders').delete().eq('user_id', userId);
+  }
+
+  await sb.from('game_trades').delete().in('from_user', HOUSE_USERS);
+  await sb.from('game_trades').delete().in('to_user', HOUSE_USERS);
+  await sb.from('game_duels').delete().in('challenger_id', HOUSE_USERS);
+  await sb.from('game_duels').delete().in('defender_id', HOUSE_USERS);
+
+  await sb.from('game_zones').update({ owner_user_id: null, last_claim_at: new Date().toISOString() }).not('id', 'is', null);
+
+  if (fullHousehold) {
+    await sb.from('daily_assignments').update({ completed: false, completed_at: null, completed_by: null }).in('user_id', HOUSE_USERS);
+    await sb.from('task_stats').update({ tasks_completed: 0 }).in('user_id', HOUSE_USERS);
+    await sb.from('litter_cleanings').delete().in('cleaned_by', HOUSE_USERS);
+    await sb.from('feeding_logs').delete().in('fed_by', HOUSE_USERS);
+    await sb.from('house_fund_transactions').delete().in('user_id', HOUSE_USERS);
+    await sb.from('mood_checkins').delete().in('user_id', HOUSE_USERS);
+    await sb.from('mini_game_state').delete().in('user_id', HOUSE_USERS);
+  }
+
+  return { wiped: true, users: HOUSE_USERS, full_household: fullHousehold };
+}

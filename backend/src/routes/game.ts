@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase } from '../lib/supabase.js';
-import { getDemoStore, uuid } from '../lib/demoStore.js';
+import { getDemoStore, uuid, resetDemoStore } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 import {
   PATRON_BY_USER,
@@ -1282,6 +1282,27 @@ router.post('/dungeon/claim', async (req: Request, res: Response) => {
     const result = await gameDb.claimDungeonRoom(supabase, user.username);
     res.json(result);
   } catch (err) { handleGameError(res, err); }
+});
+
+router.post('/wipe', async (req: Request, res: Response) => {
+  const user = (req as Request & { user: AuthPayload }).user;
+  if (user.username !== 'aden') {
+    return res.status(403).json({ error: 'Only Aden can wipe game data' });
+  }
+
+  const full = Boolean(req.body?.full);
+
+  if (isDemoMode || !supabase) {
+    resetDemoStore();
+    return res.json({ wiped: true, mode: 'demo', full_household: full });
+  }
+
+  try {
+    const result = await gameDb.wipeAllGameData(supabase, full);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
 export default router;

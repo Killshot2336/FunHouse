@@ -205,7 +205,7 @@ export function CommanderVillage() {
       {tab === 'missions' && <MissionBoard state={state} />}
       {tab === 'inventory' && <InventoryGrid state={state} onUpdate={refresh} />}
       {tab === 'trade' && <TradeHub state={state} onUpdate={refresh} />}
-      {tab === 'info' && <GameGuide state={state} />}
+      {tab === 'info' && <GameGuide state={state} onUpdate={refresh} />}
       {tab === 'leaderboard' && <Leaderboard />}
     </div>
   );

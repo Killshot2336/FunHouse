@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAuthStore, useNotificationStore } from '../../../stores';
+import { api } from '../../../lib/api';
 import { RARITY_COLORS } from './gameConfig';
 import { ItemInfoModal } from './ItemInfoModal';
 import type { GameState } from './CommanderVillage';
@@ -6,11 +8,15 @@ import type { LootItemDef } from './gameConfig';
 
 interface GameGuideProps {
   state: GameState;
+  onUpdate?: () => void;
 }
 
-export function GameGuide({ state }: GameGuideProps) {
+export function GameGuide({ state, onUpdate }: GameGuideProps) {
+  const { user, token } = useAuthStore();
+  const notify = useNotificationStore((s) => s.show);
   const [openSection, setOpenSection] = useState<string | null>('getting_started');
   const [infoItem, setInfoItem] = useState<LootItemDef | null>(null);
+  const [wiping, setWiping] = useState(false);
 
   const guide = state.config.guide || [];
   const items = (state.config.items || []) as LootItemDef[];
@@ -82,6 +88,33 @@ export function GameGuide({ state }: GameGuideProps) {
       </div>
 
       {infoItem && <ItemInfoModal item={infoItem} onClose={() => setInfoItem(null)} />}
+
+      {user?.username === 'aden' && (
+        <div className="theme-card p-4 space-y-3 border border-red-500/30">
+          <h3 className="text-sm font-bold text-red-400">Demo Reset</h3>
+          <p className="text-xs opacity-60">
+            Wipe all villages, troops, inventory, trades, XP, and world captures for Aden, Edward &amp; Jamie. Fresh start for demos.
+          </p>
+          <button
+            disabled={wiping}
+            onClick={async () => {
+              if (!confirm('Wipe ALL game data for everyone? This cannot be undone.')) return;
+              setWiping(true);
+              try {
+                await api('/game/wipe', { method: 'POST', body: JSON.stringify({}) }, token);
+                notify('Game wiped — everyone starts fresh!', 'success');
+                onUpdate?.();
+              } catch (e) {
+                notify(e instanceof Error ? e.message : 'Wipe failed', 'error');
+              }
+              setWiping(false);
+            }}
+            className="theme-btn w-full text-sm border border-red-500/50 text-red-400"
+          >
+            {wiping ? 'Wiping...' : 'Wipe Game Data (All Players)'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
