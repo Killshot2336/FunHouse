@@ -10,8 +10,8 @@ export const supabase: SupabaseClient | null = isDemoMode
   : createClient(supabaseUrl, supabaseKey);
 
 export const USERS = {
-  edward: { username: 'edward', displayName: 'Edward', theme: 'morty' as const, password: process.env.EDWARD_PASSWORD || 'portal' },
-  dada: { username: 'dada', displayName: 'Dada', theme: 'enclave' as const, password: process.env.DADA_PASSWORD || 'enclave' },
+  aden: { username: 'aden', displayName: 'Aden', theme: 'morty' as const, password: process.env.ADEN_PASSWORD || 'portal' },
+  edward: { username: 'edward', displayName: 'Edward', theme: 'enclave' as const, password: process.env.EDWARD_PASSWORD || 'enclave' },
   jamie: { username: 'jamie', displayName: 'Jamie', theme: 'warlock' as const, password: process.env.JAMIE_PASSWORD || 'warlock' },
 };
 

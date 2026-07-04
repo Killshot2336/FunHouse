@@ -6,6 +6,16 @@ import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 const router = Router();
 router.use(authMiddleware);
 
+// Cats
+router.get('/cats', async (_req: Request, res: Response) => {
+  if (isDemoMode || !supabase) {
+    return res.json(getDemoStore().cats);
+  }
+  const { data, error } = await supabase.from('cats').select('*');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 // Litter boxes
 router.get('/litter-boxes', async (_req: Request, res: Response) => {
   if (isDemoMode || !supabase) {

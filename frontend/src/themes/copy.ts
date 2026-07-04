@@ -67,7 +67,7 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
       notGreat: 'Not Great',
       vent: 'Vent into the void (anonymous)',
     },
-    bored: { button: 'I\'M BORED, RICK', title: 'Infinite Garage Clicker' },
+    bored: { button: 'I\'M BORED, RICK', title: 'Commander Village' },
     stash: { title: 'THE STASH', hidden: '' },
     notifications: {
       taskComplete: 'Microverse battery charged! +1 damage to chaos entity.',
@@ -116,7 +116,7 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
       notGreat: 'Compromised',
       vent: 'Submit anonymous field report',
     },
-    bored: { button: 'RECREATION PORTAL', title: 'Enclave Outpost Builder' },
+    bored: { button: 'RECREATION PORTAL', title: 'Commander Village' },
     stash: { title: 'CLASSIFIED STORAGE', hidden: '' },
     notifications: {
       taskComplete: 'Mission accomplished. Threat level reduced.',
@@ -165,7 +165,7 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
       notGreat: 'Shadowed',
       vent: 'Whisper your burdens into the void (anonymous)',
     },
-    bored: { button: 'SEEK DIVERSION', title: "Karlak's Mirror" },
+    bored: { button: 'SEEK DIVERSION', title: 'Commander Village' },
     stash: { title: '', hidden: 'This knowledge is not for your eyes, vessel.' },
     notifications: {
       taskComplete: 'The abomination writhes in pain. Well done, vessel.',
@@ -175,8 +175,8 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
 };
 
 export const userProfiles: Record<string, { emoji: string; color: string }> = {
-  edward: { emoji: '🧪', color: '#39ff14' },
-  dada: { emoji: '🦅', color: '#1a3a6e' },
+  aden: { emoji: '🧪', color: '#39ff14' },
+  edward: { emoji: '🦅', color: '#1a3a6e' },
   jamie: { emoji: '🔮', color: '#8b0000' },
 };
 

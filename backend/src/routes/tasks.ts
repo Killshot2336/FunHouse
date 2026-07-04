@@ -6,7 +6,7 @@ import { authMiddleware, AuthPayload } from '../middleware/auth.js';
 const router = Router();
 router.use(authMiddleware);
 
-const USERS_LIST = ['edward', 'dada', 'jamie'];
+const USERS_LIST = ['aden', 'edward', 'jamie'];
 
 function shuffleArray<T>(arr: T[]): T[] {
   const a = [...arr];

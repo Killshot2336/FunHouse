@@ -59,7 +59,7 @@ export function Dashboard() {
         <div className="theme-card p-4">
           <h3 className="font-bold mb-3 text-sm uppercase tracking-wider">Weekly Champion</h3>
           <div className="flex gap-4 justify-around">
-            {['edward', 'dada', 'jamie'].map((uid) => {
+            {['aden', 'edward', 'jamie'].map((uid) => {
               const stat = bossData.stats.find((s) => s.user_id === uid);
               const isChamp = bossData.boss.champion === uid;
               return (
@@ -78,7 +78,7 @@ export function Dashboard() {
       <div className="theme-card p-4">
         <h3 className="font-bold mb-3 text-sm uppercase tracking-wider">Household Mood Ring</h3>
         <div className="flex justify-around">
-          {['edward', 'dada', 'jamie'].map((uid) => {
+          {['aden', 'edward', 'jamie'].map((uid) => {
             const mood = moodData?.moods?.find((m) => m.user_id === uid);
             return (
               <div key={uid} className="text-center">

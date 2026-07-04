@@ -5,8 +5,8 @@ import { themeCopy, userProfiles } from '../themes/copy';
 import { ThemeProvider } from './ThemeProvider';
 
 const USERS = [
-  { username: 'edward', displayName: 'Edward', theme: 'morty' as const, password: 'portal' },
-  { username: 'dada', displayName: 'Dada', theme: 'enclave' as const, password: 'enclave' },
+  { username: 'aden', displayName: 'Aden', theme: 'morty' as const, password: 'portal' },
+  { username: 'edward', displayName: 'Edward', theme: 'enclave' as const, password: 'enclave' },
   { username: 'jamie', displayName: 'Jamie', theme: 'warlock' as const, password: 'warlock' },
 ];
 

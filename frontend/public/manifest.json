@@ -1,7 +1,7 @@
 {
   "name": "Funhouse",
   "short_name": "Funhouse",
-  "description": "Household management command center for Edward, Dada, and Jamie",
+  "description": "Household management command center for Aden, Edward, and Jamie",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

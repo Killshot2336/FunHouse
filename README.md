@@ -1,6 +1,6 @@
 # Funhouse
 
-Cross-platform household management PWA for Edward, Dada, and Jamie. Three immersive themes, real-time sync, task battles, cat care, finances, mood tracking, mini-games, and more.
+Cross-platform household management PWA for Aden, Edward, and Jamie. Three immersive themes, real-time sync, task battles, cat care, finances, mood tracking, Commander Village game, and more.
 
 ## Stack
 
@@ -31,14 +31,21 @@ npm run dev
 
 | User   | Password | Theme                          |
 |--------|----------|--------------------------------|
-| Edward | `portal` | Rick & Morty (Morty Experience)|
-| Dada   | `enclave`| Fallout 76 (Enclave Operative) |
+| Aden   | `portal` | Rick & Morty (Morty Experience)|
+| Edward | `enclave`| Fallout 76 (Enclave Operative) |
 | Jamie  | `warlock`| Karlak (Warlock Patron)        |
+
+### Cats
+
+| Cat   | Color | Owner(s)        |
+|-------|-------|-----------------|
+| Gomez | Black | Aden            |
+| Milo  | Grey  | Edward + Jamie  |
 
 ## Production Setup (Supabase)
 
 1. Create a free [Supabase](https://supabase.com) project
-2. Run the SQL migration in `supabase/migrations/001_initial_schema.sql`
+2. Run migrations in `supabase/migrations/` in order
 3. Copy `.env.example` to `.env` and fill in your keys
 4. Set the same `VITE_*` vars for the frontend
 
@@ -54,14 +61,14 @@ npm run dev
 - **3 Unique Themes** — Full UI/UX paradigms per user (not just color swaps)
 - **Authentication** — Auto theme loading on login
 - **Real-Time Sync** — Supabase subscriptions (demo mode polls every 5-10s)
-- **Cat Care** — Litter box tracker + feeding log with urgency colors
+- **Cat Care** — Gomez & Milo feeding, bedroom/living room litter boxes with urgency colors
 - **Task Management** — 3 daily tasks per user, weekly boss battle (63 HP)
 - **House Fund** — Shared ledger for contributions/withdrawals
-- **Bill Command Center** — Dada's bill tracker with prediction system
+- **Bill Command Center** — Edward's bill tracker with prediction system
 - **Subscriptions** — Public household + private per-user views
 - **Mood Ring** — Daily check-in with anonymous vent thought bubbles
-- **Mini-Games** — Edward's Clicker, Dada's Outpost Builder, Jamie's Mirror
-- **The Stash Box** — Private inventory for Edward & Dada (hidden from Jamie)
+- **Commander Village** — Shared army-builder game with story goals, village farming, RNG drops, trading
+- **The Stash Box** — Private inventory for Aden & Edward (hidden from Jamie)
 - **PWA** — Installable on desktop, Android, and iOS home screens
 
 ## Project Structure

@@ -71,7 +71,7 @@ export function Layout() {
             key={item.key}
             onClick={() => setPage(item.key)}
             className={`flex flex-col items-center p-2 rounded transition-all ${
-              page === item.key ? 'opacity-100 scale-110' : 'opacity-50'
+              page === item.key ? 'opacity-100 scale-110 nav-active' : 'opacity-50'
             }`}
           >
             <span className="text-lg">{item.icon}</span>

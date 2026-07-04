@@ -138,7 +138,7 @@ function BillsSection() {
           </div>
         ))}
       </div>
-      {user!.username === 'dada' && (
+      {user!.username === 'edward' && (
         <div className="theme-card p-4 space-y-2">
           <h3 className="text-sm font-bold">{copy.bills.add}</h3>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Bill name" className="w-full p-2 bg-transparent border border-current rounded text-sm" />
