@@ -11,7 +11,7 @@ import { StashPage } from './StashPage';
 type Page = 'dashboard' | 'tasks' | 'cats' | 'finance' | 'bored' | 'stash';
 
 export function Layout() {
-  const { user, logout, demoMode } = useAuthStore();
+  const { user, demoMode } = useAuthStore();
   const { message, type, clear } = useNotificationStore();
   const copy = themeCopy[user!.theme];
   const [page, setPage] = useState<Page>('dashboard');
@@ -38,7 +38,6 @@ export function Layout() {
         </div>
         <div className="flex items-center gap-2">
           {demoMode && <span className="text-xs opacity-40 border border-current px-1 rounded">DEMO</span>}
-          <button onClick={logout} className="theme-btn text-xs px-2 py-1">Logout</button>
         </div>
       </header>
 

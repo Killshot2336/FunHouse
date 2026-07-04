@@ -1,84 +1,74 @@
 # Funhouse
 
-Cross-platform household management PWA for Aden, Edward, and Jamie. Three immersive themes, real-time sync, task battles, cat care, finances, mood tracking, Commander Village game, and more.
+Private household PWA for **Aden**, **Edward**, and **Jamie**. One link, install on your phone like a native app, everything stays in sync.
+
+## Use it on your phone (production)
+
+1. Follow **[DEPLOY.md](DEPLOY.md)** — two steps: connect Vercel + paste Supabase keys
+2. Open the Vercel link on your phone
+3. Tap your name once — that device is locked to you forever
+4. **iPhone:** Safari → Share → Add to Home Screen
+5. **Android:** Chrome → Install app
+
+No passwords. No `npm run dev` needed for daily use.
+
+| Person | Theme | Cats |
+|--------|-------|------|
+| Aden | Rick & Morty | Gomez (black) |
+| Edward | Fallout Enclave | Milo (grey, shared) |
+| Jamie | Karlak Warlock | Milo (grey, shared) |
+
+## What you get
+
+- **Tap identity** — pick Aden / Edward / Jamie once per device
+- **Real-time sync** — tasks, cats, boss HP, finances, Commander Village
+- **Friday Faction War** — AI rival household battles every weekend
+- **3 immersive themes** — full UI paradigms, not just colors
+- **PWA** — fullscreen on home screen, works offline for cached pages
+
+## Features
+
+- Cat care (Gomez & Milo, bedroom + living room litter boxes)
+- Daily chores (3 per person) + weekly boss (63 HP)
+- House fund, bills (Edward), subscriptions, mood ring
+- Commander Village — shared army-builder game with trading
+- The Stash (Aden + Edward only)
+- Friday AI rival faction battles that scale to your skill
 
 ## Stack
 
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS + Zustand
-- **Backend**: Node.js + Express REST API
-- **Database**: Supabase (PostgreSQL + Realtime)
-- **Deployment**: Vercel (free tier) + Supabase (free tier)
+- React + Vite + Tailwind (frontend)
+- Express API on Vercel serverless (backend)
+- Supabase PostgreSQL (database)
+- Free tier: Vercel Hobby + Supabase
 
-## Quick Start (Demo Mode)
+## Local dev (optional)
 
-The app runs in **demo mode** without Supabase credentials — all data is stored in-memory on the backend.
+Only needed if you're changing code:
 
 ```bash
-# Install dependencies
 npm install
 cd frontend && npm install
 cd ../backend && npm install
-
-# Start both servers
 cd ..
 npm run dev
 ```
 
 - Frontend: http://localhost:5173
-- Backend API: http://localhost:3001
+- Backend: http://localhost:3001
+- Runs in demo mode without Supabase env vars
 
-### Login Credentials
-
-| User   | Password | Theme                          |
-|--------|----------|--------------------------------|
-| Aden   | `portal` | Rick & Morty (Morty Experience)|
-| Edward | `enclave`| Fallout 76 (Enclave Operative) |
-| Jamie  | `warlock`| Karlak (Warlock Patron)        |
-
-### Cats
-
-| Cat   | Color | Owner(s)        |
-|-------|-------|-----------------|
-| Gomez | Black | Aden            |
-| Milo  | Grey  | Edward + Jamie  |
-
-## Production Setup (Supabase)
-
-1. Create a free [Supabase](https://supabase.com) project
-2. Run migrations in `supabase/migrations/` in order
-3. Copy `.env.example` to `.env` and fill in your keys
-4. Set the same `VITE_*` vars for the frontend
-
-## Deploy to Vercel (Free)
-
-1. Push to GitHub
-2. Import project in [Vercel](https://vercel.com)
-3. Add environment variables from `.env.example`
-4. Deploy — Vercel serves the frontend and API routes automatically
-
-## Features
-
-- **3 Unique Themes** — Full UI/UX paradigms per user (not just color swaps)
-- **Authentication** — Auto theme loading on login
-- **Real-Time Sync** — Supabase subscriptions (demo mode polls every 5-10s)
-- **Cat Care** — Gomez & Milo feeding, bedroom/living room litter boxes with urgency colors
-- **Task Management** — 3 daily tasks per user, weekly boss battle (63 HP)
-- **House Fund** — Shared ledger for contributions/withdrawals
-- **Bill Command Center** — Edward's bill tracker with prediction system
-- **Subscriptions** — Public household + private per-user views
-- **Mood Ring** — Daily check-in with anonymous vent thought bubbles
-- **Commander Village** — Shared army-builder game with story goals, village farming, RNG drops, trading
-- **The Stash Box** — Private inventory for Aden & Edward (hidden from Jamie)
-- **PWA** — Installable on desktop, Android, and iOS home screens
-
-## Project Structure
+## Project structure
 
 ```
 funhouse/
-├── frontend/          # React SPA
+├── frontend/          # React PWA
 ├── backend/           # Express API
 ├── api/               # Vercel serverless entry
 ├── supabase/          # Database migrations
-├── legacy/            # Previous HouseGrid app
-└── vercel.json        # Deployment config
+└── vercel.json        # Deploy config
 ```
+
+## Deploy
+
+See **[DEPLOY.md](DEPLOY.md)** for the full checklist.

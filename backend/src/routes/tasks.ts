@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { isDemoMode, supabase, getWeekStart } from '../lib/supabase.js';
 import { getDemoStore, uuid } from '../lib/demoStore.js';
 import { authMiddleware, AuthPayload } from '../middleware/auth.js';
+import { dealHouseholdDamage } from '../lib/rivalAI.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -148,6 +149,13 @@ router.post('/complete/:id', async (req: Request, res: Response) => {
   if (stats?.[0]) {
     await supabase.from('weekly_boss').update({ champion: stats[0].user_id, champion_tasks: stats[0].tasks_completed }).eq('week_start', weekStart);
   }
+
+  await dealHouseholdDamage(
+    supabase,
+    3,
+    `${user.displayName} completed a chore — household forces strike the rival!`,
+    user.username
+  );
 
   res.json({ assignment });
 });

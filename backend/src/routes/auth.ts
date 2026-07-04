@@ -4,14 +4,41 @@ import { generateToken } from '../middleware/auth.js';
 
 const router = Router();
 
-router.post('/login', async (req: Request, res: Response) => {
-  const { username, password } = req.body;
-  const user = USERS[username as keyof typeof USERS];
+const VALID_USERS = ['aden', 'edward', 'jamie'] as const;
 
-  if (!user || user.password !== password) {
-    return res.status(401).json({ error: 'Invalid credentials' });
+router.post('/identify', async (req: Request, res: Response) => {
+  const { username } = req.body;
+
+  if (!username || !(VALID_USERS as readonly string[]).includes(username)) {
+    return res.status(400).json({ error: 'Pick Aden, Edward, or Jamie' });
   }
 
+  const user = USERS[username as keyof typeof USERS];
+  const token = generateToken({
+    username: user.username,
+    theme: user.theme,
+    displayName: user.displayName,
+  });
+
+  res.json({
+    token,
+    user: {
+      username: user.username,
+      displayName: user.displayName,
+      theme: user.theme,
+    },
+    demoMode: isDemoMode,
+  });
+});
+
+router.post('/login', async (req: Request, res: Response) => {
+  const { username } = req.body;
+
+  if (!username || !(VALID_USERS as readonly string[]).includes(username)) {
+    return res.status(400).json({ error: 'Pick Aden, Edward, or Jamie' });
+  }
+
+  const user = USERS[username as keyof typeof USERS];
   const token = generateToken({
     username: user.username,
     theme: user.theme,

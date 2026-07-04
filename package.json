@@ -11,6 +11,9 @@
     "build:backend": "cd backend && npm run build",
     "start:backend": "cd backend && npm start"
   },
+  "dependencies": {
+    "@vercel/node": "^5.1.8"
+  },
   "devDependencies": {
     "concurrently": "^9.1.0"
   }

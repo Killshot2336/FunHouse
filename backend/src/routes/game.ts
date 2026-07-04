@@ -18,6 +18,7 @@ import {
   rollLoot,
   defaultUnitStats,
 } from '../lib/gameEngine.js';
+import * as gameDb from '../lib/gameSupabase.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -67,7 +68,12 @@ function applyOffline(store: ReturnType<typeof getDemoStore>, userId: string) {
   cmd.last_seen_at = new Date().toISOString();
 }
 
-// GET full game state
+function handleGameError(res: Response, err: unknown) {
+  const message = err instanceof Error ? err.message : 'Request failed';
+  const status = message.includes('Not found') ? 404 : 400;
+  return res.status(status).json({ error: message });
+}
+
 router.get('/state', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
 
@@ -89,10 +95,14 @@ router.get('/state', async (req: Request, res: Response) => {
     });
   }
 
-  res.json({ error: 'Supabase game mode not yet wired' });
+  try {
+    const state = await gameDb.getGameState(supabase, user.username);
+    res.json(state);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Mark story seen
 router.post('/story-seen', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   if (isDemoMode || !supabase) {
@@ -101,10 +111,11 @@ router.post('/story-seen', async (req: Request, res: Response) => {
     cmd.story_seen = true;
     return res.json({ success: true });
   }
+
+  await supabase.from('game_commanders').update({ story_seen: true }).eq('user_id', user.username);
   res.json({ success: true });
 });
 
-// Place building
 router.post('/build', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const { building_key, grid_x, grid_y } = req.body;
@@ -139,10 +150,15 @@ router.post('/build', async (req: Request, res: Response) => {
     refreshPower(store, user.username);
     return res.json({ building, commander: cmd });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.placeBuilding(supabase, user.username, building_key, grid_x, grid_y);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Recruit unit
 router.post('/recruit', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const { unit_key } = req.body;
@@ -174,10 +190,15 @@ router.post('/recruit', async (req: Request, res: Response) => {
     refreshPower(store, user.username);
     return res.json({ unit, commander: cmd });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.recruitUnit(supabase, user.username, unit_key);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Upgrade unit stat
 router.post('/units/:id/upgrade', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const { stat } = req.body;
@@ -202,10 +223,15 @@ router.post('/units/:id/upgrade', async (req: Request, res: Response) => {
     refreshPower(store, user.username);
     return res.json({ unit, commander: cmd });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.upgradeUnit(supabase, user.username, unitId, stat);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Customize unit
 router.patch('/units/:id/cosmetics', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const unitId = String(req.params.id);
@@ -218,16 +244,20 @@ router.patch('/units/:id/cosmetics', async (req: Request, res: Response) => {
     unit.cosmetics = { ...unit.cosmetics, ...cosmetics };
     return res.json({ unit });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.updateUnitCosmetics(supabase, user.username, unitId, cosmetics);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Start patrol
 router.post('/patrol', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
 
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
-    const cmd = getOrCreateCommander(store, user.username);
     const active = store.gamePatrols.find((p) => p.user_id === user.username && !p.result_json);
     if (active) return res.status(400).json({ error: 'Patrol already active' });
 
@@ -236,10 +266,15 @@ router.post('/patrol', async (req: Request, res: Response) => {
     store.gamePatrols.push(patrol);
     return res.json({ patrol });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.startPatrol(supabase, user.username);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Complete patrol (claim loot)
 router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const patrolId = String(req.params.id);
@@ -280,10 +315,15 @@ router.post('/patrol/:id/claim', async (req: Request, res: Response) => {
     updateMissionProgress(store, user.username, 'patrol', 1);
     return res.json({ drops, commander: cmd, pity });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.claimPatrol(supabase, user.username, patrolId);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Equip item
 router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const { unit_id, slot } = req.body;
@@ -304,10 +344,15 @@ router.post('/inventory/:id/equip', async (req: Request, res: Response) => {
     refreshPower(store, user.username);
     return res.json({ item, unit });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.equipItem(supabase, user.username, itemId, unit_id, slot);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Sell item
 router.post('/inventory/:id/sell', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   const itemId = String(req.params.id);
@@ -327,10 +372,15 @@ router.post('/inventory/:id/sell', async (req: Request, res: Response) => {
     store.gameInventory.splice(idx, 1);
     return res.json({ commander: cmd });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.sellItem(supabase, user.username, itemId);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Collect offline resources manually
 router.post('/collect', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   if (isDemoMode || !supabase) {
@@ -339,10 +389,15 @@ router.post('/collect', async (req: Request, res: Response) => {
     const cmd = getOrCreateCommander(store, user.username);
     return res.json({ commander: cmd });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const cmd = await gameDb.applyOffline(supabase, user.username);
+    res.json({ commander: cmd });
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Trades
 router.get('/trades', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
   if (isDemoMode || !supabase) {
@@ -352,7 +407,9 @@ router.get('/trades', async (req: Request, res: Response) => {
     );
     return res.json(trades);
   }
-  res.json([]);
+
+  const trades = await gameDb.getTrades(supabase, user.username);
+  res.json(trades);
 });
 
 router.post('/trades', async (req: Request, res: Response) => {
@@ -368,7 +425,9 @@ router.post('/trades', async (req: Request, res: Response) => {
     store.gameTrades.push(trade);
     return res.json(trade);
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  const trade = await gameDb.createTrade(supabase, user.username, to_user, offer, request);
+  res.json(trade);
 });
 
 router.post('/trades/:id/accept', async (req: Request, res: Response) => {
@@ -403,10 +462,15 @@ router.post('/trades/:id/accept', async (req: Request, res: Response) => {
     trade.status = 'accepted';
     return res.json({ trade, success: true });
   }
-  res.status(501).json({ error: 'Not implemented' });
+
+  try {
+    const result = await gameDb.acceptTrade(supabase, user.username, tradeId);
+    res.json(result);
+  } catch (err) {
+    handleGameError(res, err);
+  }
 });
 
-// Leaderboard
 router.get('/leaderboard', async (_req: Request, res: Response) => {
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
@@ -421,7 +485,9 @@ router.get('/leaderboard', async (_req: Request, res: Response) => {
     }).sort((a, b) => b.power_rating - a.power_rating);
     return res.json(board);
   }
-  res.json([]);
+
+  const board = await gameDb.getLeaderboard(supabase);
+  res.json(board);
 });
 
 function updateMissionProgress(

@@ -1,0 +1,60 @@
+# Deploy Funhouse (2 steps)
+
+Funhouse runs free on Vercel + Supabase. After this one-time setup, you only share a link — Edward and Jamie tap their name once on their phone and they're in.
+
+## Step 1: Connect GitHub to Vercel
+
+1. Go to [vercel.com](https://vercel.com) and sign in with GitHub
+2. **Add New Project** → import `Killshot2336/FunHouse`
+3. Vercel reads settings from `vercel.json` automatically — click **Deploy**
+
+## Step 2: Add environment variables in Vercel
+
+In Vercel → your project → **Settings** → **Environment Variables**, add:
+
+| Variable | Value |
+|----------|-------|
+| `SUPABASE_URL` | your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | service role key (secret) |
+| `SUPABASE_ANON_KEY` | anon public key |
+| `VITE_SUPABASE_URL` | same as `SUPABASE_URL` |
+| `VITE_SUPABASE_ANON_KEY` | same as `SUPABASE_ANON_KEY` |
+| `JWT_SECRET` | long random string (64+ chars) |
+
+Do **not** set `VITE_API_URL` — it defaults to `/api` on the same domain.
+
+Click **Redeploy** after adding variables.
+
+### Supabase migrations
+
+In Supabase → **SQL Editor**, run each file in order:
+
+1. `supabase/migrations/001_initial_schema.sql`
+2. `supabase/migrations/002_rename_aden_and_swap_themes.sql`
+3. `supabase/migrations/003_commander_village.sql`
+4. `supabase/migrations/004_rival_faction.sql`
+
+## Share the link
+
+Vercel gives you a URL like `https://funhouse-xxxx.vercel.app`. Text it to Edward and Jamie.
+
+### Install on iPhone (Jamie)
+
+1. Open the link in **Safari** (not Chrome)
+2. Tap **Share** → **Add to Home Screen** → **Add**
+3. Open from home screen → tap **Jamie**
+
+### Install on Android (Edward)
+
+1. Open the link in Chrome
+2. Menu → **Install app** or **Add to Home screen**
+3. Tap **Edward**
+
+### Verify it works
+
+- Visit `https://your-app.vercel.app/api/health` — should show `{ "demoMode": false }`
+- Complete a task on one phone → it appears on the others within seconds
+
+## That's it
+
+No passwords. No app store. Push to GitHub → Vercel auto-updates. Cost: $0.

@@ -3,6 +3,7 @@ import { useAuthStore, useBossStore } from '../stores';
 import { api } from '../lib/api';
 import { themeCopy, userProfiles, moodEmojis } from '../themes/copy';
 import { BossBattle } from './BossBattle';
+import { RivalBattle } from './RivalBattle';
 import { MoodRing } from './MoodRing';
 import { ThoughtBubbles } from './ThoughtBubbles';
 
@@ -46,6 +47,8 @@ export function Dashboard() {
       <div className="theme-card p-4">
         <p className="text-sm opacity-80 italic">{copy.greeting}</p>
       </div>
+
+      <RivalBattle />
 
       <BossBattle bossData={bossData} />
 
