@@ -87,24 +87,37 @@ export interface DungeonRoom {
   icon: string;
   enemyPower: number;
   lootRarity: Rarity;
+  isBoss?: boolean;
+  bossName?: string;
 }
 
-export function generateDungeonRooms(seed: number, playerPower: number): DungeonRoom[] {
+const PATRON_BOSSES: Record<string, { mini: string; final: string; miniIcon: string; finalIcon: string }> = {
+  rick: { mini: 'Glootie Minion', final: 'Interdimensional Horror', miniIcon: '🤖', finalIcon: '👾' },
+  enclave: { mini: 'Rogue Mutant', final: 'Bunker Warlord', miniIcon: '☢️', finalIcon: '🦅' },
+  karlak: { mini: 'Shade Stalker', final: 'Lich Lord', miniIcon: '👤', finalIcon: '💀' },
+};
+
+export function generateDungeonRooms(seed: number, playerPower: number, patron = 'rick'): DungeonRoom[] {
   const rand = seededRandom(seed);
   const roomCount = 3 + Math.floor(rand() * 3);
   const themes = ['Crypt', 'Cavern', 'Ruins', 'Vault', 'Nest', 'Arena'];
   const icons = ['💀', '🕳️', '🏚️', '🔒', '🕸️', '⚔️'];
   const rarities: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
+  const bosses = PATRON_BOSSES[patron] || PATRON_BOSSES.rick;
 
   return Array.from({ length: roomCount }, (_, i) => {
     const t = Math.floor(rand() * themes.length);
     const powerScale = 0.5 + (i + 1) * 0.15 + rand() * 0.3;
+    const isBoss = i === roomCount - 1;
+    const isMiniBoss = i === roomCount - 2 && roomCount >= 4;
     return {
       index: i,
-      name: `${themes[t]} ${i + 1}`,
-      icon: icons[t],
-      enemyPower: Math.floor(playerPower * powerScale),
+      name: isBoss ? bosses.final : isMiniBoss ? bosses.mini : `${themes[t]} ${i + 1}`,
+      icon: isBoss ? bosses.finalIcon : isMiniBoss ? bosses.miniIcon : icons[t],
+      enemyPower: Math.floor(playerPower * powerScale * (isBoss ? 1.25 : 1)),
       lootRarity: rarities[Math.min(i, rarities.length - 1)],
+      isBoss: isBoss || isMiniBoss,
+      bossName: isBoss ? bosses.final : isMiniBoss ? bosses.mini : undefined,
     };
   });
 }

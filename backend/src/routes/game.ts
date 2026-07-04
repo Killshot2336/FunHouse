@@ -1485,14 +1485,19 @@ router.get('/dungeon', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     const seed = getDungeonSeed();
-    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10, cmd.patron);
     const run = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed);
     return res.json({
       seed,
       resets_at: dungeonResetsAt(),
-      rooms_preview: rooms.map((r) => ({ index: r.index, name: r.name, icon: r.icon })),
+      rooms_preview: rooms.map((r) => ({
+        index: r.index, name: r.name, icon: r.icon,
+        enemyPower: r.enemyPower, lootRarity: r.lootRarity,
+        isBoss: r.isBoss || false, bossName: r.bossName,
+      })),
       room_count: rooms.length,
       run: run || null,
+      player_power: cmd.power_rating,
     });
   }
 
@@ -1509,7 +1514,7 @@ router.post('/dungeon/enter', async (req: Request, res: Response) => {
     const store = getDemoStore();
     const cmd = getOrCreateCommander(store, user.username);
     const seed = getDungeonSeed();
-    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10);
+    const rooms = generateDungeonRooms(seed, cmd.power_rating || 10, cmd.patron);
     const existing = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed);
     if (existing?.status === 'completed') return res.status(400).json({ error: 'Already completed this dungeon' });
     if (existing) return res.json({ run: existing, rooms });
@@ -1529,12 +1534,17 @@ router.post('/dungeon/enter', async (req: Request, res: Response) => {
 
 router.post('/dungeon/claim', async (req: Request, res: Response) => {
   const user = (req as Request & { user: AuthPayload }).user;
+  const { fight_started_at } = req.body as { fight_started_at?: string };
 
   if (isDemoMode || !supabase) {
     const store = getDemoStore();
     const seed = getDungeonSeed();
     const run = store.gameDungeonRuns.find((r) => r.user_id === user.username && r.seed === seed && r.status === 'active');
     if (!run) return res.status(404).json({ error: 'No active dungeon run' });
+    if (fight_started_at) {
+      const elapsed = (Date.now() - new Date(fight_started_at).getTime()) / 1000;
+      if (elapsed < 1 || elapsed > 20) return res.status(400).json({ error: 'Fight not complete — battle takes 1-20 seconds' });
+    }
     const rooms = run.rooms_json as Array<{ index: number; enemyPower: number; lootRarity: string }>;
     const room = rooms[run.room_index];
     if (!room) return res.status(400).json({ error: 'Invalid room' });
@@ -1566,7 +1576,7 @@ router.post('/dungeon/claim', async (req: Request, res: Response) => {
   }
 
   try {
-    const result = await gameDb.claimDungeonRoom(supabase, user.username);
+    const result = await gameDb.claimDungeonRoom(supabase, user.username, fight_started_at);
     await awardXpLive(user.username, 'dungeon');
     res.json(result);
   } catch (err) { handleGameError(res, err); }

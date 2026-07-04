@@ -260,6 +260,27 @@ export function getMarketBulkSellBonus(buildings: BuildingState[]): number {
   return 1 + bonus;
 }
 
+/** Barracks Elite Guard slot 5: +1 army slot */
+export function hasBarracksEliteGuard(buildings: BuildingState[]): boolean {
+  for (const b of buildings) {
+    if (b.building_key !== 'barracks') continue;
+    const upgrades = ((b.building_meta_json || {}) as { upgrades?: Record<string, number> }).upgrades || {};
+    if ((upgrades['5'] || 0) >= 1) return true;
+  }
+  return false;
+}
+
+/** Tavern dungeon loot slot 1: +5% dungeon loot per level */
+export function getTavernDungeonLootBonus(buildings: BuildingState[]): number {
+  let bonus = 0;
+  for (const b of buildings) {
+    if (b.building_key !== 'tavern') continue;
+    const upgrades = ((b.building_meta_json || {}) as { upgrades?: Record<string, number> }).upgrades || {};
+    bonus += (upgrades['1'] || 0) * 0.05;
+  }
+  return 1 + bonus;
+}
+
 /** Farm Market Bonus slot 4 per farm */
 export function getFarmCropSellBonus(buildings: BuildingState[], cropKey: string): number {
   let bonus = 0;

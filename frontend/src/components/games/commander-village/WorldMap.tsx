@@ -150,7 +150,7 @@ export function WorldMap({ state, onUpdate }: WorldMapProps) {
             <div>
               <h4 className="font-bold text-sm">{zoneInfo.icon} {zoneInfo.name} ({selected.zone_x},{selected.zone_y})</h4>
               <p className="text-xs opacity-50">
-                Capture yield: {Object.entries(selected.yield_json).map(([k, v]) => `${v} ${k}`).join(', ')}
+                Passive yield/hr: {Object.entries(selected.yield_json).map(([k, v]) => `${v} ${k}`).join(', ')}
               </p>
               <p className="text-xs opacity-50">Owner: {selected.owner_user_id || 'Unclaimed'} · Enemy: {enemyPowerHint}</p>
             </div>

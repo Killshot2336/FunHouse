@@ -22,6 +22,17 @@ export interface ThemeCopy {
   bored: { button: string; title: string };
   stash: { title: string; hidden: string };
   notifications: { taskComplete: string; bossHit: string };
+  commanderVillage: {
+    subtitle: string;
+    autoHarvest: string;
+    dungeonTitle: string;
+    dungeonIntro: string;
+    bossFinal: string;
+    bossMini: string;
+    fight: string;
+    victory: string;
+    defeat: string;
+  };
 }
 
 export const themeCopy: Record<UserTheme, ThemeCopy> = {
@@ -73,6 +84,17 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
       taskComplete: 'Microverse battery charged! +1 damage to chaos entity.',
       bossHit: 'Direct hit! The chaos entity recoils!',
     },
+    commanderVillage: {
+      subtitle: 'Portal outpost command — don\'t blow it, Morty.',
+      autoHarvest: 'Buildings auto-bank into your counters',
+      dungeonTitle: 'Interdimensional Dungeon',
+      dungeonIntro: 'Rip through pocket dimensions and loot weird science gear.',
+      bossFinal: 'Interdimensional Horror',
+      bossMini: 'Glootie Minion',
+      fight: 'FIGHT!',
+      victory: '*burp* We looted the multiverse!',
+      defeat: 'You got schwifty-wrecked. Train your army.',
+    },
   },
   enclave: {
     appName: 'ENCLAVE OPERATIVE',
@@ -122,6 +144,17 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
       taskComplete: 'Mission accomplished. Threat level reduced.',
       bossHit: 'Tactical strike confirmed. Enemy integrity compromised.',
     },
+    commanderVillage: {
+      subtitle: 'Operative village command — secure the sector.',
+      autoHarvest: 'Supply lines auto-deliver to inventory',
+      dungeonTitle: 'Classified Depths',
+      dungeonIntro: 'Breach underground sectors. Neutralize hostiles. Secure assets.',
+      bossFinal: 'Bunker Warlord',
+      bossMini: 'Rogue Mutant',
+      fight: 'ENGAGE',
+      victory: 'Sector cleared. Outstanding, Operative.',
+      defeat: 'Mission failed. Reinforce your squad.',
+    },
   },
   warlock: {
     appName: 'WARLOCK PATRON',
@@ -170,6 +203,17 @@ export const themeCopy: Record<UserTheme, ThemeCopy> = {
     notifications: {
       taskComplete: 'The abomination writhes in pain. Well done, vessel.',
       bossHit: 'Your strike lands true. The beast weakens.',
+    },
+    commanderVillage: {
+      subtitle: 'Patron\'s domain — serve well, vessel.',
+      autoHarvest: 'Tributes flow to your coffers unbidden',
+      dungeonTitle: 'Crypt of Shadows',
+      dungeonIntro: 'Descend into cursed halls. Slay what stirs below.',
+      bossFinal: 'Lich Lord',
+      bossMini: 'Shade Stalker',
+      fight: 'STRIKE',
+      victory: 'The darkness yields its treasures to you.',
+      defeat: 'Your power falters. Grow stronger, vessel.',
     },
   },
 };

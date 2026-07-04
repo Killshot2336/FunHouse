@@ -43,6 +43,20 @@ In Supabase → **SQL Editor**, run each file in order (skip any that error beca
 
 In Supabase SQL Editor, run `supabase/scripts/wipe_game_reset.sql` — or log in as **Aden** → Commander Village → **Info** → **Reset All Game Data**.
 
+### Post-deploy smoke test (Commander Village)
+
+After merging the four-phase overhaul:
+
+1. Log in as each player (Aden, Edward, Jamie) — theme should match (portal / tactical / arcane).
+2. **Village**: place farm + market; wait ~1 min; counters auto-rise without harvest clicks.
+3. **Army**: recruit, upgrade a stat, equip/unequip gear.
+4. **Market**: sell crops; **Patrol**: start and claim.
+5. **Dungeon**: enter → **FIGHT** boss (max 20s animation) → loot lands in Loot tab.
+6. **Trade**: send gift; other player accept or decline.
+7. **Duels**: challenge; defender accept or either cancel.
+8. **World**: capture zone; passive yield accrues hourly on owned zones.
+9. Run factory reset once if old broken save data exists.
+
 ## Share the link
 
 Vercel gives you a URL like `https://funhouse-xxxx.vercel.app`. Text it to Edward and Jamie.
